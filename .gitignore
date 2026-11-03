@@ -8,3 +8,5 @@
 tests/e2e/node_modules/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
+frontend/bench/vision/.cache/
+backend/loadtest/results/raw/
