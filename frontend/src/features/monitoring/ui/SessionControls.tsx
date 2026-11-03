@@ -1,11 +1,12 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-import type { MonitoringSnapshot, SessionStatus } from '@/features/monitoring/contracts';
+import type { SessionStatus } from '@/features/monitoring/contracts';
 
 export interface SessionControlsProps {
   status: SessionStatus;
-  monitoring: MonitoringSnapshot;
+  /** True while the student-declared break is active (primitive keeps this component memo-safe). */
+  onBreak: boolean;
   consentAccepted: boolean;
   onConsentChange: (accepted: boolean) => void;
   onStart: () => void;
@@ -29,7 +30,7 @@ const DANGER = `${PRIMARY} border border-rose-300 bg-white text-rose-700 hover:b
  */
 export function SessionControls({
   status,
-  monitoring,
+  onBreak,
   consentAccepted,
   onConsentChange,
   onStart,
@@ -97,7 +98,7 @@ export function SessionControls({
               type="button"
               data-testid="break-start"
               onClick={onBreakStart}
-              disabled={busy || monitoring.onBreak}
+              disabled={busy || onBreak}
               className={SECONDARY}
             >
               휴식 시작
@@ -106,7 +107,7 @@ export function SessionControls({
               type="button"
               data-testid="break-end"
               onClick={onBreakEnd}
-              disabled={busy || !monitoring.onBreak}
+              disabled={busy || !onBreak}
               className={SECONDARY}
             >
               휴식 종료

@@ -34,6 +34,8 @@ All additions are **optional** fields in `contracts.ts` (no wire/API change; `op
   update (W1 files a CONTRACT_CHANGE_REQUEST with measurements; C0 applies it).
 - `MonitoringPerf.p95InferenceMs?`, `effectiveIntervalMs?`, `effectivePhoneIntervalMs?`, `lowPower?`,
   `framesDropped?` — adaptive-cadence telemetry produced by the engine (W1), displayed by the UI (W3).
+- `MonitoringSnapshot.lastReason?` — reason of the engine's latest transition, so the UI can show the
+  real cause of `UNKNOWN` instead of inferring it.
 Producers SHOULD populate them; consumers MUST treat `undefined` as "not reported".
 Nothing in these fields leaves the browser.
 

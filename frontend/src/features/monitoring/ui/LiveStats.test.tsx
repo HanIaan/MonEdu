@@ -39,6 +39,13 @@ describe('LiveStats', () => {
     expect(screen.getByTestId('late-seconds')).toHaveAttribute('data-seconds', '802');
   });
 
+  it('emphasises the focus total as the primary metric', () => {
+    render(<LiveStats values={makeValues()} sync={SYNC} />);
+    const focus = screen.getByTestId('focus-total');
+    expect(focus.className).toContain('text-3xl');
+    expect(focus.closest('div')?.className).toContain('border-emerald-200');
+  });
+
   it('renders an empty data-seconds when the student has not been seated', () => {
     render(
       <LiveStats

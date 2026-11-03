@@ -25,6 +25,10 @@ function asApiError(err: unknown): ApiError {
 
 /**
  * Small fetch/poll state machine used by dashboard hooks.
+ *
+ * Concurrency contract (P2-W3 step 2): at most one request is in flight. A refresh or poll
+ * request that arrives while a request is running is coalesced into a single trailing reload
+ * (never more than one), so a burst of SSE events cannot fan out into overlapping fetches.
  * Refreshes keep the previous data visible (no skeleton flash); failures keep the last data.
  */
 export function useAsyncData<T>(
@@ -40,39 +44,73 @@ export function useAsyncData<T>(
     loading: boolean;
     fetchedAt: number | null;
   }>({ data: null, error: null, loading: true, fetchedAt: null });
-  const [nonce, setNonce] = useState(0);
-  const keyRef = useRef(key);
-  const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
-  useEffect(() => {
-    if (keyRef.current !== key) {
-      keyRef.current = key;
-      setState({ data: null, error: null, loading: true, fetchedAt: null });
+  const mountedRef = useRef(true);
+  const activeRef = useRef<{ controller: AbortController; id: number } | null>(null);
+  const pendingRef = useRef(false);
+  const idRef = useRef(0);
+  const startRef = useRef<(reset: boolean) => void>(() => {});
+
+  const start = useCallback((reset: boolean) => {
+    // Single-flight: remember that another reload is wanted and start it when this one settles.
+    if (activeRef.current) {
+      pendingRef.current = true;
+      return;
     }
+    if (reset) setState({ data: null, error: null, loading: true, fetchedAt: null });
 
+    const id = idRef.current + 1;
+    idRef.current = id;
     const controller = new AbortController();
-    let cancelled = false;
+    activeRef.current = { controller, id };
 
-    const load = async () => {
+    void (async () => {
       try {
         const result = await fetcherRef.current(controller.signal);
-        if (cancelled) return;
+        if (!mountedRef.current || controller.signal.aborted) return;
         setState({ data: result, error: null, loading: false, fetchedAt: Date.now() });
       } catch (err) {
-        if (cancelled || controller.signal.aborted) return;
+        if (!mountedRef.current || controller.signal.aborted) return;
         setState((prev) => ({ ...prev, error: asApiError(err), loading: false }));
+      } finally {
+        // Ignore completion of a superseded (aborted / key-changed) request.
+        const wasActive = activeRef.current?.id === id;
+        if (wasActive) activeRef.current = null;
+        if (wasActive && mountedRef.current && pendingRef.current) {
+          pendingRef.current = false;
+          startRef.current(false);
+        }
       }
-    };
+    })();
+  }, []);
 
-    void load();
-    const timer = refreshMs > 0 ? setInterval(() => void load(), refreshMs) : null;
+  startRef.current = start;
+  const refresh = useCallback(() => start(false), [start]);
 
+  const keyRef = useRef(key);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    // Reset only when the request identity changes (the initial state is already `loading`).
+    const keyChanged = keyRef.current !== key;
+    keyRef.current = key;
+    start(keyChanged);
+    const timer = refreshMs > 0 ? setInterval(() => start(false), refreshMs) : null;
     return () => {
-      cancelled = true;
-      controller.abort();
       if (timer) clearInterval(timer);
+      // Supersede any in-flight request; its completion must not update state or trigger a reload.
+      activeRef.current?.controller.abort();
+      activeRef.current = null;
+      pendingRef.current = false;
     };
-  }, [key, refreshMs, nonce]);
+  }, [key, refreshMs, start]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   return { ...state, refresh };
 }
