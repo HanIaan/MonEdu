@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type {
   ActivityState,
@@ -235,7 +236,10 @@ export function MonitoringCard({
 
       <div className="space-y-3 p-4">
         {cameraLive ? (
-          <p className="flex items-center gap-2 rounded-md bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+          <p
+            data-testid="camera-active-indicator"
+            className="flex items-center gap-2 rounded-md bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
+          >
             <span aria-hidden="true" className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
@@ -427,9 +431,17 @@ export function MonitoringCard({
           </p>
         ) : null}
 
-        <p className="text-[11px] leading-relaxed text-slate-500">
-          영상은 브라우저 안에서만 분석되며 서버로 전송·저장되지 않습니다. 미리보기는 보기 전용이며 분석을
-          제어하지 않습니다.
+        <p data-testid="privacy-notice" className="text-[11px] leading-relaxed text-slate-500">
+          영상은 <strong className="font-semibold text-slate-700">브라우저 안에서만</strong> 분석되며 서버로
+          전송되거나 저장되지 않습니다. 미리보기는 보기 전용이며 분석을 제어하지 않습니다.{' '}
+          <Link
+            href="/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+          >
+            개인정보 처리 안내
+          </Link>
         </p>
       </div>
     </section>

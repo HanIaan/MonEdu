@@ -203,4 +203,27 @@ describe('MonitoringCard', () => {
     rerender(<MonitoringCard {...makeProps({ perf: { ...PERF, p95InferenceMs: 42.6 } })} />);
     expect(screen.getByTestId('p95-inference')).toHaveTextContent('43 ms');
   });
+
+  it('keeps the camera hidden by default, shows an active indicator and the privacy notice', () => {
+    window.localStorage.setItem('sm.framingDone', '1');
+    render(
+      <MonitoringCard
+        {...makeProps({ cameraStatus: 'active', sessionStatus: 'active', lastObservation: OBSERVATION })}
+      />,
+    );
+
+    // No preview unless the student asks for one.
+    expect(screen.queryByTestId('camera-preview')).not.toBeInTheDocument();
+    expect(screen.getByTestId('camera-active-indicator')).toHaveTextContent('카메라 작동 중');
+
+    const notice = screen.getByTestId('privacy-notice');
+    expect(notice).toHaveTextContent('브라우저 안에서만');
+    expect(notice).toHaveTextContent('저장되지 않습니다');
+    expect(screen.getByRole('link', { name: '개인정보 처리 안내' })).toHaveAttribute('href', '/privacy');
+  });
+
+  it('hides the camera-active indicator while the camera is off', () => {
+    render(<MonitoringCard {...makeProps({ cameraStatus: 'idle' })} />);
+    expect(screen.queryByTestId('camera-active-indicator')).not.toBeInTheDocument();
+  });
 });
