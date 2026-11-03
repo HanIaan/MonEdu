@@ -118,4 +118,56 @@ describe('useCoalescedStreamRefresh', () => {
     });
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it('still refetches at least every maxWait during a continuous event stream', () => {
+    const refresh = vi.fn();
+    // Defaults: debounceMs 400, maxWaitMs 2000.
+    renderHook(() => useCoalescedStreamRefresh('/api/v1/me/stream', refresh));
+
+    // A big class: an event every 100 ms for 5 s — always inside the trailing debounce window.
+    act(() => {
+      for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
+        stream.handlers!.onEvent({
+          type: 'STATE_CHANGED',
+          studentId: 's',
+          sessionId: 'sess',
+          state: 'AWAY',
+          reason: 'PRESENCE_LOST',
+          at: new Date().toISOString(),
+        });
+        vi.advanceTimersByTime(100);
+      }
+    });
+
+    // Pure trailing debounce would yield 0 refetches here. maxWait forces one per 2 s.
+    expect(refresh.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(refresh.mock.calls.length).toBe(2);
+
+    // Once the stream stops, the trailing debounce still fires once for the tail.
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(refresh.mock.calls.length).toBe(3);
+  });
+
+  it('honours a custom maxWait', () => {
+    const refresh = vi.fn();
+    renderHook(() => useCoalescedStreamRefresh('/api/v1/me/stream', refresh, { maxWaitMs: 1_000 }));
+
+    act(() => {
+      for (let elapsed = 0; elapsed < 5_000; elapsed += 100) {
+        stream.handlers!.onEvent({
+          type: 'STATE_CHANGED',
+          studentId: 's',
+          sessionId: 'sess',
+          state: 'AWAY',
+          reason: 'PRESENCE_LOST',
+          at: new Date().toISOString(),
+        });
+        vi.advanceTimersByTime(100);
+      }
+    });
+
+    expect(refresh.mock.calls.length).toBeGreaterThanOrEqual(5);
+  });
 });
