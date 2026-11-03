@@ -8,6 +8,7 @@ import { api, ApiError } from '@/lib/api/client';
 import type { StudySession } from '@/lib/api/types';
 import { nowMs } from '@/lib/time';
 import { createMonitoringController } from '../engine';
+import { exposeDiagnostics } from './diagnostics';
 import type { MonitoringController, MonitoringSnapshot, SessionStatus, StudySessionApi, SyncStatus } from '../contracts';
 import { SessionSync } from './sync';
 import { IDLE_SNAPSHOT } from './idle';
@@ -38,7 +39,10 @@ export function useStudySession(): StudySessionApi {
   });
 
   const getController = useCallback((): MonitoringController => {
-    if (!controllerRef.current) controllerRef.current = createMonitoringController();
+    if (!controllerRef.current) {
+      controllerRef.current = createMonitoringController();
+      exposeDiagnostics(controllerRef.current);
+    }
     return controllerRef.current;
   }, []);
 

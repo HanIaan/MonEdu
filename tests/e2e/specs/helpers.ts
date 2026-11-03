@@ -11,6 +11,8 @@ export const USERS = {
   student1: 'student1@demo.local',
   student2: 'student2@demo.local',
   student3: 'student3@demo.local',
+  /** Soak-only account (not in the backend seed): created by scripts/ensure-soak-user.sh. */
+  soak: 'soak@demo.local',
 } as const;
 
 export async function apiLogin(request: APIRequestContext, email: string) {
