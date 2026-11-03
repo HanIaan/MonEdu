@@ -82,4 +82,76 @@ describe('MonitoringCard', () => {
     expect(screen.queryByTestId('camera-preview')).not.toBeInTheDocument();
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
+
+  it('shows the camera denial cause and retries through resumeMonitoring (onResume)', () => {
+    const onResume = vi.fn();
+    render(
+      <MonitoringCard
+        {...makeProps({ sessionStatus: 'active', cameraStatus: 'denied', engineState: 'UNKNOWN', onResume })}
+      />,
+    );
+
+    expect(screen.getByTestId('camera-status-cause')).toHaveAttribute('data-status', 'denied');
+    expect(screen.getByTestId('camera-status-cause')).toHaveTextContent('권한이 거부');
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'CAMERA_PERMISSION_DENIED');
+
+    fireEvent.click(screen.getByTestId('monitoring-retry'));
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a distinct model error cause with a retry action', () => {
+    const onResume = vi.fn();
+    render(
+      <MonitoringCard
+        {...makeProps({ sessionStatus: 'active', modelStatus: 'error', engineState: 'UNKNOWN', onResume })}
+      />,
+    );
+
+    expect(screen.getByTestId('model-status-cause')).toHaveAttribute('data-status', 'error');
+    expect(screen.getByTestId('model-status-cause')).toHaveTextContent('불러오지 못했습니다');
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'MODEL_ERROR');
+    expect(screen.getByTestId('monitoring-retry')).toBeInTheDocument();
+  });
+
+  it('explains a paused monitoring state', () => {
+    render(
+      <MonitoringCard
+        {...makeProps({
+          sessionStatus: 'active',
+          cameraStatus: 'stopped',
+          modelStatus: 'ready',
+          engineState: 'UNKNOWN',
+          paused: true,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'MONITORING_PAUSED');
+    expect(screen.getByTestId('unknown-state-reason')).toHaveTextContent('일시 중단');
+    // The existing pause/resume controls handle the paused case; no duplicate retry button.
+    expect(screen.queryByTestId('monitoring-retry')).not.toBeInTheDocument();
+  });
+
+  it('reports a stalled analysis as the cause of an unknown state', () => {
+    render(
+      <MonitoringCard
+        {...makeProps({
+          sessionStatus: 'active',
+          cameraStatus: 'active',
+          modelStatus: 'ready',
+          engineState: 'UNKNOWN',
+          lastFrameAt: 10_000,
+          now: 20_000,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'INFERENCE_STALLED');
+    expect(screen.getByTestId('unknown-state-reason')).toHaveTextContent('분석이 지연');
+  });
+
+  it('does not offer a retry before a session is active', () => {
+    render(<MonitoringCard {...makeProps({ cameraStatus: 'denied', sessionStatus: 'idle' })} />);
+    expect(screen.queryByTestId('monitoring-retry')).not.toBeInTheDocument();
+  });
 });

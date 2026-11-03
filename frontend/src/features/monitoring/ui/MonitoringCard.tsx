@@ -3,12 +3,18 @@ import { useEffect, useRef, useState } from 'react';
 import type { ActivityState, CameraStatus, FrameObservation, ModelStatus, SessionStatus } from '@/features/monitoring/contracts';
 import { StateBadge } from '@/components/StateBadge';
 import {
+  CAMERA_STATUS_DETAIL,
   CAMERA_STATUS_LABEL,
+  MODEL_STATUS_DETAIL,
   MODEL_STATUS_LABEL,
   TONE_DOT,
   TONE_TEXT,
+  cameraNeedsAttention,
   cameraStatusTone,
+  deriveUnavailableReason,
+  modelNeedsAttention,
   modelStatusTone,
+  transitionReasonText,
 } from './status';
 
 const FRAMING_STORAGE_KEY = 'sm.framingDone';
@@ -99,6 +105,12 @@ export interface MonitoringCardProps {
   /** Preview only — never used for inference. */
   cameraStream: MediaStream | null;
   cameraError?: string | null;
+  /** Epoch ms of the last processed frame (stall detection). */
+  lastFrameAt?: number | null;
+  /** Client network state; false hints at a heartbeat timeout. */
+  online?: boolean;
+  /** Injected clock for deterministic cause derivation (tests). */
+  now?: number;
   onPause: () => void;
   onResume: () => void;
 }
@@ -118,6 +130,9 @@ export function MonitoringCard({
   sessionStatus,
   cameraStream,
   cameraError,
+  lastFrameAt = null,
+  online,
+  now,
   onPause,
   onResume,
 }: MonitoringCardProps) {
@@ -132,6 +147,24 @@ export function MonitoringCard({
   const sessionActive = sessionStatus === 'active';
   const faceOk = cameraLive && Boolean(lastObservation?.faceDetected);
   const bodyOk = cameraLive && Boolean(lastObservation?.upperBodyDetected);
+
+  const unavailableReason =
+    engineState === 'UNKNOWN'
+      ? deriveUnavailableReason({
+          engineState,
+          cameraStatus,
+          modelStatus,
+          paused,
+          lastFrameAt,
+          now: now ?? 0,
+          online,
+        })
+      : null;
+  const unavailableText =
+    transitionReasonText(unavailableReason) ??
+    (sessionActive ? '측정 근거가 충분하지 않습니다.' : '아직 모니터링이 시작되지 않았습니다.');
+  const needsRetry =
+    sessionActive && !paused && (cameraNeedsAttention(cameraStatus) || modelNeedsAttention(modelStatus));
 
   // First-time setup: the first time the camera becomes active, offer a framing check.
   useEffect(() => {
@@ -218,6 +251,51 @@ export function MonitoringCard({
             dataFps={fps.toFixed(1)}
           />
         </dl>
+
+        <div className="space-y-1">
+          <p
+            data-testid="camera-status-cause"
+            data-status={cameraStatus}
+            className={`text-[11px] leading-relaxed ${
+              cameraNeedsAttention(cameraStatus) ? 'font-medium text-rose-700' : 'text-slate-500'
+            }`}
+          >
+            {cameraError ?? CAMERA_STATUS_DETAIL[cameraStatus]}
+          </p>
+          <p
+            data-testid="model-status-cause"
+            data-status={modelStatus}
+            className={`text-[11px] leading-relaxed ${
+              modelNeedsAttention(modelStatus) ? 'font-medium text-rose-700' : 'text-slate-500'
+            }`}
+          >
+            {MODEL_STATUS_DETAIL[modelStatus]}
+          </p>
+        </div>
+
+        {engineState === 'UNKNOWN' ? (
+          <div
+            data-testid="unknown-state"
+            data-reason={unavailableReason ?? 'NONE'}
+            className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2"
+          >
+            <p className="text-xs font-semibold text-slate-700">측정 불가</p>
+            <p data-testid="unknown-state-reason" className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
+              {unavailableText}
+            </p>
+          </div>
+        ) : null}
+
+        {needsRetry ? (
+          <button
+            type="button"
+            data-testid="monitoring-retry"
+            onClick={onResume}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          >
+            다시 시도
+          </button>
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2">
           <button

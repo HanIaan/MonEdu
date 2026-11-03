@@ -115,6 +115,9 @@ export function StudentStudyScreen({
             sessionStatus={session.status}
             cameraStream={session.cameraStream}
             cameraError={session.monitoring.error}
+            lastFrameAt={session.monitoring.lastFrameAt}
+            online={session.sync.online}
+            now={now}
             onPause={handlePause}
             onResume={handleResume}
           />
