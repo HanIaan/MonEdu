@@ -55,18 +55,14 @@ export function StudentStudyScreen({
   };
 
   const handleStart = () => {
-    const video = requireVideo();
-    if (!video) return;
     setActionError(null);
     // Called directly from the click handler so getUserMedia keeps the user gesture.
-    void session.start(video).catch((err: unknown) => setActionError(actionMessage(err)));
+    void session.start().catch((err: unknown) => setActionError(actionMessage(err)));
   };
 
   const handleResume = () => {
-    const video = requireVideo();
-    if (!video) return;
     setActionError(null);
-    void session.resumeMonitoring(video).catch((err: unknown) => setActionError(actionMessage(err)));
+    void session.resumeMonitoring().catch((err: unknown) => setActionError(actionMessage(err)));
   };
 
   const handleEnd = () => {

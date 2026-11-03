@@ -1,0 +1,7 @@
+app:
+  jwt:
+    secret: test-secret-test-secret-test-secret-0123456789
+  seed-demo-data: true
+  monitoring:
+    timeout-scan-interval: PT1H
+    sse-ping-interval: PT1H

@@ -1,7 +1,7 @@
 # Owner: C0. Usage (from repo root):
-#   cp .env.example .env   # then set JWT_SECRET
-#   docker compose --env-file .env -f infra/docker-compose.yml up -d postgres          # DB only (dev)
-#   docker compose --env-file .env -f infra/docker-compose.yml --profile app up -d --build  # full stack
+#   cp .env.example .env            # then set JWT_SECRET (openssl rand -base64 48)
+#   docker compose --env-file .env -f infra/docker-compose.yml up -d postgres                 # DB only (local dev)
+#   docker compose --env-file .env -f infra/docker-compose.yml --profile app up -d --build    # full stack
 name: study-monitor
 
 services:
@@ -21,6 +21,45 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  backend:
+    profiles: [app]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-study_monitor}
+      DB_USERNAME: ${POSTGRES_USER:-study_monitor}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-study_monitor}
+      JWT_SECRET: ${JWT_SECRET:-}  # backend fails fast if < 32 bytes
+      JWT_TTL: ${JWT_TTL:-PT12H}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      FLYWAY_LOCATIONS: ${FLYWAY_LOCATIONS:-classpath:db/migration}
+      TZ: UTC
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  frontend:
+    profiles: [app]
+    build:
+      context: ../frontend
+      dockerfile: ../infra/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
 
 volumes:
   pgdata:

@@ -218,17 +218,25 @@ export interface SyncStatus {
   lastError: string | null;
 }
 
-/** What the student study screen (W3) consumes via `useStudySession()`. */
+/**
+ * What the student study screen (W3) consumes via `useStudySession()`.
+ * v1.1: the session layer owns the ANALYSIS <video> (attached to document.body, independent of any
+ * React component). UI previews only render `cameraStream`; mounting/unmounting a preview never
+ * affects inference.
+ */
 export interface StudySessionApi {
   status: SessionStatus;
   session: StudySession | null;
   monitoring: MonitoringSnapshot;
   sync: SyncStatus;
+  /** Live camera stream for an OPTIONAL preview (null when the camera is off). Read-only use. */
+  cameraStream: MediaStream | null;
   /** Start server session, then camera + engine. Must be called from a user gesture. */
-  start(video: HTMLVideoElement): Promise<void>;
+  start(): Promise<void>;
   /** Student-controlled stop of monitoring (camera released). Session stays ACTIVE. */
   pauseMonitoring(): void;
-  resumeMonitoring(video: HTMLVideoElement): Promise<void>;
+  /** Must be called from a user gesture. */
+  resumeMonitoring(): Promise<void>;
   startBreak(): void;
   endBreak(): void;
   /** End the study session. */
