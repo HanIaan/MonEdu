@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { memo } from 'react';
 import type { ApiError, TeacherStudentOverview } from '@/lib/api';
 import { formatDuration, formatSeoulTime } from '@/lib/time';
 import { StateBadge } from '@/components/StateBadge';
@@ -22,7 +23,7 @@ function CellLabel({ children }: { children: string }) {
 }
 
 /** Teacher dashboard: assigned students, live state badges and today's summary. */
-export function TeacherStudentsView({ students, loading, error, onRetry }: TeacherStudentsViewProps) {
+export const TeacherStudentsView = memo(function TeacherStudentsView({ students, loading, error, onRetry }: TeacherStudentsViewProps) {
   if (error) {
     return (
       <ErrorBanner
@@ -166,4 +167,4 @@ export function TeacherStudentsView({ students, loading, error, onRetry }: Teach
       </table>
     </div>
   );
-}
+});

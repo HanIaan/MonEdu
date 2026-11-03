@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 export type StatTone = 'default' | 'focus' | 'warn' | 'danger' | 'muted' | 'info';
 
@@ -26,7 +26,8 @@ export interface StatCardProps {
   className?: string;
 }
 
-export function StatCard({ label, value, hint, tone = 'default', testId, seconds, className = '' }: StatCardProps) {
+/** Leaf card; memoised so dashboard snapshot/table re-renders do not re-render the stats. */
+export const StatCard = memo(function StatCard({ label, value, hint, tone = 'default', testId, seconds, className = '' }: StatCardProps) {
   const hasSeconds = seconds !== undefined;
   return (
     <div className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
@@ -41,4 +42,4 @@ export function StatCard({ label, value, hint, tone = 'default', testId, seconds
       {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
     </div>
   );
-}
+});

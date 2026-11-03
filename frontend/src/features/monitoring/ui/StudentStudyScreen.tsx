@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import type { ApiError, StudyDayReport } from '@/lib/api';
 import type { StudySessionApi } from '@/features/monitoring/contracts';
 import { ErrorBanner } from '@/components/ErrorBanner';
@@ -20,6 +20,15 @@ export interface StudentStudyScreenProps {
   /** Live display tick in ms; 0 disables it (tests). */
   tickMs?: number;
 }
+
+/**
+ * Memo boundaries: the 4 Hz monitoring snapshot lives only in the monitoring/status card.
+ * The timeline, live stats and session controls receive stable props (or primitives), so a
+ * snapshot tick no longer re-renders them (P2-W3 step 1).
+ */
+const MemoTimeline = memo(Timeline);
+const MemoLiveStats = memo(LiveStats);
+const MemoSessionControls = memo(SessionControls);
 
 function actionMessage(err: unknown): string {
   if (err instanceof Error && err.message && !/not integrated/i.test(err.message)) return err.message;
@@ -44,23 +53,46 @@ export function StudentStudyScreen({
   const [actionError, setActionError] = useState<string | null>(null);
   const busy = session.status === 'starting' || session.status === 'ending';
   const now = useNowMs(tickMs, Boolean(report));
-  const liveValues = report ? deriveLiveValues(report, fetchedAt, now) : null;
+  // Stable between snapshot ticks: `now` only advances on the display tick.
+  const liveValues = useMemo(
+    () => (report ? deriveLiveValues(report, fetchedAt, now) : null),
+    [report, fetchedAt, now],
+  );
 
-  const handleStart = () => {
+  // Session methods are stable across snapshot ticks; depend on them directly so the memoised
+  // session controls are not invalidated by the 4 Hz snapshot.
+  const { start, end, resumeMonitoring, pauseMonitoring, startBreak, endBreak } = session;
+
+  const handleStart = useCallback(() => {
     setActionError(null);
     // Called directly from the click handler so getUserMedia keeps the user gesture.
-    void session.start().catch((err: unknown) => setActionError(actionMessage(err)));
-  };
+    void start().catch((err: unknown) => setActionError(actionMessage(err)));
+  }, [start]);
 
-  const handleResume = () => {
+  const handleResume = useCallback(() => {
     setActionError(null);
-    void session.resumeMonitoring().catch((err: unknown) => setActionError(actionMessage(err)));
-  };
+    void resumeMonitoring().catch((err: unknown) => setActionError(actionMessage(err)));
+  }, [resumeMonitoring]);
 
-  const handleEnd = () => {
+  const handlePause = useCallback(() => {
     setActionError(null);
-    void session.end().catch((err: unknown) => setActionError(actionMessage(err)));
-  };
+    pauseMonitoring();
+  }, [pauseMonitoring]);
+
+  const handleBreakStart = useCallback(() => {
+    setActionError(null);
+    startBreak();
+  }, [startBreak]);
+
+  const handleBreakEnd = useCallback(() => {
+    setActionError(null);
+    endBreak();
+  }, [endBreak]);
+
+  const handleEnd = useCallback(() => {
+    setActionError(null);
+    void end().catch((err: unknown) => setActionError(actionMessage(err)));
+  }, [end]);
 
   return (
     <div className="space-y-6">
@@ -83,27 +115,18 @@ export function StudentStudyScreen({
             sessionStatus={session.status}
             cameraStream={session.cameraStream}
             cameraError={session.monitoring.error}
-            onPause={() => {
-              setActionError(null);
-              session.pauseMonitoring();
-            }}
+            onPause={handlePause}
             onResume={handleResume}
           />
 
-          <SessionControls
+          <MemoSessionControls
             status={session.status}
-            monitoring={session.monitoring}
+            onBreak={session.monitoring.onBreak}
             consentAccepted={consentAccepted}
             onConsentChange={setConsentAccepted}
             onStart={handleStart}
-            onBreakStart={() => {
-              setActionError(null);
-              session.startBreak();
-            }}
-            onBreakEnd={() => {
-              setActionError(null);
-              session.endBreak();
-            }}
+            onBreakStart={handleBreakStart}
+            onBreakEnd={handleBreakEnd}
             onEnd={handleEnd}
             busy={busy}
             error={actionError}
@@ -141,7 +164,7 @@ export function StudentStudyScreen({
             />
           ) : null}
 
-          {report && liveValues ? <LiveStats values={liveValues} sync={session.sync} /> : null}
+          {report && liveValues ? <MemoLiveStats values={liveValues} sync={session.sync} /> : null}
 
           {report ? (
             <section
@@ -154,7 +177,7 @@ export function StudentStudyScreen({
                 </h2>
                 <p className="text-xs text-slate-500">구간에 마우스를 올리거나 포커스하면 상세가 표시됩니다.</p>
               </div>
-              <Timeline intervals={report.intervals} computedAt={report.computedAt} />
+              <MemoTimeline intervals={report.intervals} computedAt={report.computedAt} />
             </section>
           ) : null}
         </div>
