@@ -39,6 +39,16 @@ public class Store {
     public List<StudySession> day(UUID student, LocalDate date) {
         return em.createQuery("from StudySession where studentId=:id and studyDate=:date order by startedAt,id",StudySession.class).setParameter("id",student).setParameter("date",date).getResultList();
     }
+    public List<StudySession> dayForStudents(List<UUID> students, LocalDate date) {
+        if(students.isEmpty()) return List.of();
+        return em.createQuery("from StudySession where studentId in :ids and studyDate=:date order by startedAt,id",StudySession.class)
+            .setParameter("ids",students).setParameter("date",date).getResultList();
+    }
+    public List<StudySession> activeForStudents(List<UUID> students) {
+        if(students.isEmpty()) return List.of();
+        return em.createQuery("from StudySession where studentId in :ids and status='ACTIVE'",StudySession.class)
+            .setParameter("ids",students).getResultList();
+    }
     public List<UUID> expired(Instant cutoff) {
         return em.createQuery("select id from StudySession where status='ACTIVE' and currentState not in ('UNKNOWN','BREAK') and coalesce(lastHeartbeatAt,startedAt)<:cutoff",UUID.class).setParameter("cutoff",cutoff).getResultList();
     }
