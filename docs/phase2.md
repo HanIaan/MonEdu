@@ -52,3 +52,14 @@ No remote push / PR / deployment without explicit user approval.
 3. Existing demo DBs (V1000 seed applied) failed to boot after adding V2 (C0 at integration restart;
    fixed by W2 with Flyway out-of-order + upgrade regression tests).
 4. PHONE_SUSPECTED carried `phoneScore: 0` from a face/pose-only tick (W1; fixed).
+
+## Final verification on the integration branch (2026-11-04, C0)
+- Frontend: typecheck ✓, lint ✓, Vitest **194/194** (23 files), production build ✓
+- Backend: `./gradlew test` **71/71** (Phase 1's 36 kept), real seeded dev DB boots on the new migrations
+- OpenAPI ↔ Spring mappings **12/12**, only prose changed vs `phase1-mvp`
+- E2E, one full run (production build): **36/36** — api 8, ui 6, camera-person 12 (incl. phone, pets,
+  frozen frames, heartbeat-loss + outage stays UNKNOWN, preview parity, 5-min soak), camera-nobody 1,
+  camera-denied 1, WebKit engine 8 (incl. phone, pets)
+- 30-min soak ✓ (see limitations.md); 2-hour soak started after the E2E run
+- Not covered: real Safari.app (checklist: `docs/safari-manual-checklist.md`), real webcams, Firefox,
+  low-end hardware, >1,000 users
