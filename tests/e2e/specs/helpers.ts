@@ -35,6 +35,8 @@ export async function uiLogin(page: Page, email: string) {
   await page.getByTestId('login-email').fill(email);
   await page.getByTestId('login-password').fill(PASSWORD);
   await page.getByTestId('login-submit').click();
+  // wait until the app has stored the token and routed away from /login
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
 }
 
 /**

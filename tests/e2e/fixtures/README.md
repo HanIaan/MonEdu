@@ -1,7 +1,9 @@
 # E2E camera fixtures
 
-Chrome's fake capture device plays `--use-file-for-fake-video-capture=<file>.mjpeg` (concatenated
-JPEG frames). `global-setup.ts` builds `*.mjpeg` from these stills at test time (gitignored).
+Stills drawn into a canvas `captureStream()` that replaces `getUserMedia` (see `specs/helpers.ts`
+`installCanvasCamera`), so tests can switch scenes at runtime. Inference still runs the real MediaPipe
+models. (Chrome Headless Shell rejects `--use-file-for-fake-video-capture` with NotFoundError, so
+file-based fake devices are not used.)
 
 | file | source | license |
 |---|---|---|

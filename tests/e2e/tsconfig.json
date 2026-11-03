@@ -9,5 +9,5 @@
     "types": ["node"],
     "lib": ["ES2023", "DOM"]
   },
-  "include": ["specs/**/*.ts", "playwright.config.ts", "global-setup.ts"]
+  "include": ["specs/**/*.ts", "playwright.config.ts"]
 }
