@@ -1,7 +1,11 @@
 /// <reference lib="webworker" />
 /**
- * Module Web Worker running MediaPipe inference off the main thread.
+ * Web Worker running MediaPipe inference off the main thread.
  * Receives transferred ImageBitmaps, returns coarse FrameObservations only, and closes every bitmap.
+ *
+ * Works as a CLASSIC worker (production: Next 16 Turbopack bundles `new Worker(new URL(...))` into a
+ * bootstrap that loads its chunks with importScripts, which is illegal in module workers) and as a
+ * MODULE worker (ESM bundlers). The mode decides which MediaPipe WASM loader can be used.
  */
 import * as tasks from '@mediapipe/tasks-vision';
 import { MediaPipeRunner } from './mediapipeRunner';
@@ -11,6 +15,21 @@ const scope = self as unknown as DedicatedWorkerGlobalScope & {
   import?: (url: string) => Promise<unknown>;
   ModuleFactory?: unknown;
 };
+
+/**
+ * importScripts() with no arguments is a no-op in a classic worker and throws TypeError in a module
+ * worker. Classic → tasks-vision loads `vision_wasm_internal.js` via importScripts (re-executed per
+ * task, defines a global ModuleFactory). Module → it must use the ES-module loader (`useModule`).
+ */
+function detectModuleWorker(): boolean {
+  try {
+    scope.importScripts();
+    return false;
+  } catch {
+    return true;
+  }
+}
+const isModuleWorker = detectModuleWorker();
 
 // tasks-vision falls back to `self.import(url)` when importScripts throws (module worker). Provide a
 // native dynamic import the bundler leaves untouched, so the WASM loader is fetched at runtime from
@@ -40,7 +59,7 @@ scope.addEventListener('message', (ev: MessageEvent<ToWorker>) => {
   switch (msg.type) {
     case 'load':
       if (!loading) {
-        loading = MediaPipeRunner.create(tasks, msg.settings, true).then((r) => {
+        loading = MediaPipeRunner.create(tasks, msg.settings, isModuleWorker).then((r) => {
           runner = r;
         });
       }
@@ -69,3 +88,6 @@ scope.addEventListener('message', (ev: MessageEvent<ToWorker>) => {
       break;
   }
 });
+
+// Handshake: lets the main thread detect a worker that cannot start within a few seconds.
+post({ type: 'ready', moduleWorker: isModuleWorker });

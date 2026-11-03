@@ -8,6 +8,7 @@ export type ToWorker =
   | { type: 'dispose' };
 
 export type FromWorker =
+  | { type: 'ready'; moduleWorker: boolean }
   | { type: 'loaded' }
   | { type: 'loadError'; message: string }
   | { type: 'result'; id: number; observation: FrameObservation }
