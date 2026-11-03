@@ -49,7 +49,7 @@ export default defineConfig({
     },
     {
       command: 'npm --prefix ../../frontend run dev',
-      url: WEB,
+      url: `${WEB}/login`,
       reuseExistingServer: true,
       timeout: 180_000,
       env: { NEXT_PUBLIC_API_BASE_URL: API },
