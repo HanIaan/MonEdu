@@ -1,6 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { FrameObservation } from '@/features/monitoring/contracts';
+import type { FrameObservation, MonitoringPerf } from '@/features/monitoring/contracts';
 import { MonitoringCard, type MonitoringCardProps } from './MonitoringCard';
+
+const PERF: MonitoringPerf = {
+  framesProcessed: 0,
+  framesSkipped: 0,
+  avgInferenceMs: 8,
+  jsHeapBytes: null,
+};
 
 const OBSERVATION: FrameObservation = {
   at: Date.now(),
@@ -153,5 +160,47 @@ describe('MonitoringCard', () => {
   it('does not offer a retry before a session is active', () => {
     render(<MonitoringCard {...makeProps({ cameraStatus: 'denied', sessionStatus: 'idle' })} />);
     expect(screen.queryByTestId('monitoring-retry')).not.toBeInTheDocument();
+  });
+
+  it('shows the low-power notice with the effective interval and explanation', () => {
+    render(
+      <MonitoringCard
+        {...makeProps({ perf: { ...PERF, lowPower: true, effectiveIntervalMs: 2_000 } })}
+      />,
+    );
+
+    const notice = screen.getByTestId('low-power-notice');
+    expect(notice).toHaveTextContent('저사양 모드: 감지 간격 2초');
+    expect(notice).toHaveAttribute('data-interval-ms', '2000');
+    // The tooltip explains the accuracy trade-off and that time accounting is unchanged.
+    expect(notice).toHaveTextContent('상태 변화가 최대 2초 늦게 반영될 수 있지만');
+    expect(notice).toHaveTextContent('학습 시간 계산은 동일합니다');
+  });
+
+  it('formats a fractional detection interval', () => {
+    render(
+      <MonitoringCard
+        {...makeProps({ perf: { ...PERF, lowPower: true, effectiveIntervalMs: 1_500 } })}
+      />,
+    );
+    expect(screen.getByTestId('low-power-notice')).toHaveTextContent('감지 간격 1.5초');
+  });
+
+  it('still explains low-power mode when the interval is not reported yet', () => {
+    render(<MonitoringCard {...makeProps({ perf: { ...PERF, lowPower: true } })} />);
+    expect(screen.getByTestId('low-power-notice')).toHaveTextContent('감지 간격 조정됨');
+  });
+
+  it('hides the low-power notice when the engine is not in low-power mode', () => {
+    render(<MonitoringCard {...makeProps({ perf: PERF })} />);
+    expect(screen.queryByTestId('low-power-notice')).not.toBeInTheDocument();
+  });
+
+  it('shows p95 inference time only when reported', () => {
+    const { rerender } = render(<MonitoringCard {...makeProps({ perf: PERF })} />);
+    expect(screen.queryByTestId('p95-inference')).not.toBeInTheDocument();
+
+    rerender(<MonitoringCard {...makeProps({ perf: { ...PERF, p95InferenceMs: 42.6 } })} />);
+    expect(screen.getByTestId('p95-inference')).toHaveTextContent('43 ms');
   });
 });

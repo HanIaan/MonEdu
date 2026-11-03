@@ -1,6 +1,13 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import type { ActivityState, CameraStatus, FrameObservation, ModelStatus, SessionStatus } from '@/features/monitoring/contracts';
+import type {
+  ActivityState,
+  CameraStatus,
+  FrameObservation,
+  ModelStatus,
+  MonitoringPerf,
+  SessionStatus,
+} from '@/features/monitoring/contracts';
 import { StateBadge } from '@/components/StateBadge';
 import {
   CAMERA_STATUS_DETAIL,
@@ -107,6 +114,8 @@ export interface MonitoringCardProps {
   cameraError?: string | null;
   /** Epoch ms of the last processed frame (stall detection). */
   lastFrameAt?: number | null;
+  /** v1.2 perf telemetry; adaptive-cadence fields may be undefined until the engine reports them. */
+  perf?: MonitoringPerf;
   /** Client network state; false hints at a heartbeat timeout. */
   online?: boolean;
   /** Injected clock for deterministic cause derivation (tests). */
@@ -131,6 +140,7 @@ export function MonitoringCard({
   cameraStream,
   cameraError,
   lastFrameAt = null,
+  perf,
   online,
   now,
   onPause,
@@ -165,6 +175,17 @@ export function MonitoringCard({
     (sessionActive ? '측정 근거가 충분하지 않습니다.' : '아직 모니터링이 시작되지 않았습니다.');
   const needsRetry =
     sessionActive && !paused && (cameraNeedsAttention(cameraStatus) || modelNeedsAttention(modelStatus));
+
+  const lowPower = perf?.lowPower === true;
+  const intervalSeconds = perf?.effectiveIntervalMs !== undefined ? perf.effectiveIntervalMs / 1000 : null;
+  const intervalLabel =
+    intervalSeconds === null
+      ? '감지 간격 조정됨'
+      : `감지 간격 ${Number.isInteger(intervalSeconds) ? intervalSeconds : intervalSeconds.toFixed(1)}초`;
+  const lowPowerTooltip =
+    intervalSeconds === null
+      ? '기기 성능에 맞춰 감지 간격을 늘렸습니다. 상태 변화 반영이 조금 늦을 수 있지만 학습 시간 계산은 동일합니다.'
+      : `기기 성능에 맞춰 감지 간격을 ${Number.isInteger(intervalSeconds) ? intervalSeconds : intervalSeconds.toFixed(1)}초로 늘렸습니다. 상태 변화가 최대 ${Number.isInteger(intervalSeconds) ? intervalSeconds : intervalSeconds.toFixed(1)}초 늦게 반영될 수 있지만, 학습 시간 계산은 동일합니다.`;
 
   // First-time setup: the first time the camera becomes active, offer a framing check.
   useEffect(() => {
@@ -250,6 +271,14 @@ export function MonitoringCard({
             // Raw rate; 0 when the camera is not measuring.
             dataFps={fps.toFixed(1)}
           />
+          {perf?.p95InferenceMs !== undefined ? (
+            <StatusRow
+              label="p95 추론 시간"
+              value={`${Math.round(perf.p95InferenceMs)} ms`}
+              tone="ok"
+              testId="p95-inference"
+            />
+          ) : null}
         </dl>
 
         <div className="space-y-1">
@@ -272,6 +301,20 @@ export function MonitoringCard({
             {MODEL_STATUS_DETAIL[modelStatus]}
           </p>
         </div>
+
+        {lowPower ? (
+          <p
+            data-testid="low-power-notice"
+            data-interval-ms={perf?.effectiveIntervalMs}
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800"
+          >
+            <span className="font-semibold">저사양 모드: {intervalLabel}</span>
+            <span className="sr-only"> — {lowPowerTooltip}</span>
+            <span aria-hidden="true" title={lowPowerTooltip} className="ml-1 cursor-help underline decoration-dotted">
+              ?
+            </span>
+          </p>
+        ) : null}
 
         {engineState === 'UNKNOWN' ? (
           <div
