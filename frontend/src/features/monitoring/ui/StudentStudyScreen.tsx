@@ -112,6 +112,7 @@ export function StudentStudyScreen({
             lastObservation={session.monitoring.lastObservation}
             framesProcessed={session.monitoring.perf.framesProcessed}
             perf={session.monitoring.perf}
+            lastReason={session.monitoring.lastReason}
             paused={session.monitoring.paused}
             sessionStatus={session.status}
             cameraStream={session.cameraStream}

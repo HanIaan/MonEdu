@@ -226,4 +226,43 @@ describe('MonitoringCard', () => {
     render(<MonitoringCard {...makeProps({ cameraStatus: 'idle' })} />);
     expect(screen.queryByTestId('camera-active-indicator')).not.toBeInTheDocument();
   });
+
+  it('prefers snapshot.lastReason as the authoritative cause for UNKNOWN', () => {
+    render(
+      <MonitoringCard
+        {...makeProps({
+          sessionStatus: 'active',
+          // The derived cause would be CAMERA_PERMISSION_DENIED, but lastReason wins.
+          cameraStatus: 'denied',
+          engineState: 'UNKNOWN',
+          lastReason: 'CAMERA_STOPPED',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'CAMERA_STOPPED');
+    expect(screen.getByTestId('unknown-state-reason')).toHaveTextContent('카메라가 꺼져');
+  });
+
+  it('falls back to the derived cause when lastReason is null or undefined', () => {
+    const props = {
+      sessionStatus: 'active' as const,
+      cameraStatus: 'denied' as const,
+      engineState: 'UNKNOWN' as const,
+    };
+    const { rerender } = render(<MonitoringCard {...makeProps({ ...props, lastReason: null })} />);
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'CAMERA_PERMISSION_DENIED');
+
+    rerender(<MonitoringCard {...makeProps(props)} />);
+    expect(screen.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'CAMERA_PERMISSION_DENIED');
+  });
+
+  it('ignores lastReason when the engine state is not UNKNOWN', () => {
+    render(
+      <MonitoringCard
+        {...makeProps({ sessionStatus: 'active', engineState: 'FOCUS_ESTIMATED', lastReason: 'CAMERA_STOPPED' })}
+      />,
+    );
+    expect(screen.queryByTestId('unknown-state')).not.toBeInTheDocument();
+  });
 });

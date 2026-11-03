@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   ActivityState,
   CameraStatus,
+  ClientTransitionReason,
   FrameObservation,
   ModelStatus,
   MonitoringPerf,
@@ -117,6 +118,11 @@ export interface MonitoringCardProps {
   lastFrameAt?: number | null;
   /** v1.2 perf telemetry; adaptive-cadence fields may be undefined until the engine reports them. */
   perf?: MonitoringPerf;
+  /**
+   * v1.2 optional: reason of the engine's latest transition. When defined (non-null), it is the
+   * authoritative cause for an UNKNOWN state; otherwise the cause is derived from status fields.
+   */
+  lastReason?: ClientTransitionReason | null;
   /** Client network state; false hints at a heartbeat timeout. */
   online?: boolean;
   /** Injected clock for deterministic cause derivation (tests). */
@@ -142,6 +148,7 @@ export function MonitoringCard({
   cameraError,
   lastFrameAt = null,
   perf,
+  lastReason,
   online,
   now,
   onPause,
@@ -161,7 +168,8 @@ export function MonitoringCard({
 
   const unavailableReason =
     engineState === 'UNKNOWN'
-      ? deriveUnavailableReason({
+      ? lastReason ??
+        deriveUnavailableReason({
           engineState,
           cameraStatus,
           modelStatus,
