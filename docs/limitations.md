@@ -86,6 +86,17 @@ the authoritative freshness signal.
 | hidden again | 16.3 s | 30.9 s |
 One earlier run showed a 29.4 s first seating; not reproduced in later runs (cause unknown).
 
+### Heartbeat loss (E2E, Chromium)
+Student network down → teacher dashboard showed `UNKNOWN` after **80 s** (rule: 90 s since the last
+heartbeat, heartbeats every 30 s); on reconnect the client re-asserted `FOCUS_ESTIMATED` (RECONNECTED)
+and the queue drained.
+
+### Background tab freezing is unreliable to simulate
+CDP `Page.setWebLifecycleState({state:'frozen'})` on a page with an active camera capture did **not**
+stop heartbeats immediately (they continued ~1.5 min). Chrome restricts freezing of pages that capture
+media, which is consistent with "background execution is not guaranteed either way": the design relies on
+heartbeat timeout + frame-freshness stall detection, not on assumptions about tab lifecycle.
+
 ### Test-harness pitfalls found (not app defects)
 - Chrome Headless Shell rejects `--use-file-for-fake-video-capture` (NotFoundError).
 - Playwright WebKit with a granted `camera` permission serves its own dark mock device unless

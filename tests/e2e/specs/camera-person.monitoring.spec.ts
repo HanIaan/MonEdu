@@ -4,11 +4,12 @@
  * teacher dashboard updates live via SSE, sync queue recovers after offline.
  */
 import { expect, test } from '@playwright/test';
-import { endStudy, installCanvasCamera, startStudy, state, uiLogin, USERS } from './helpers';
+import { apiLogin, endStudy, installCanvasCamera, startStudy, state, uiLogin, USERS } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
-test('seated → FOCUS_ESTIMATED, teacher sees it live, upper body without a frontal face counts as present', async ({ browser }) => {
+test('seated → FOCUS_ESTIMATED, teacher sees it live, upper body without a frontal face counts as present', async ({ browser, request }) => {
+  const { user: s1 } = await apiLogin(request, USERS.student1);
   const studentCtx = await browser.newContext({ permissions: ['camera'] });
   await installCanvasCamera(studentCtx, 'person');
   const student = await studentCtx.newPage();
@@ -23,9 +24,8 @@ test('seated → FOCUS_ESTIMATED, teacher sees it live, upper body without a fro
 
   // 15 s confirmation + model warm-up
   await expect(state(student)).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 60_000 });
-  const row = teacher.locator('[data-testid="student-row"]').filter({ has: teacher.getByText(/student1|학생1|Student 1/i) });
-  const anyRow = (await row.count()) ? row.first() : teacher.getByTestId('student-row').first();
-  await expect(anyRow.getByTestId('student-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 20_000 });
+  const row = teacher.locator(`[data-testid="student-row"][data-student-id="${s1.id}"]`);
+  await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 20_000 });
 
   await expect(student.getByTestId('first-seated-at')).not.toHaveText('—');
   await expect(student.getByTestId('late-seconds')).toHaveAttribute('data-seconds', /\d+/);
@@ -92,7 +92,9 @@ test('offline → events queue; back online → queue drains', async ({ browser 
   await ctx.close();
 });
 
-test('@slow frozen tab (no heartbeat > 90 s) → server marks UNKNOWN; client re-syncs after thaw', async ({ browser }) => {
+test('@slow heartbeat lost > 90 s (network down) → server marks UNKNOWN, teacher sees it; reconnect re-syncs', async ({ browser, request }) => {
+  test.setTimeout(300_000);
+  const { user: s1 } = await apiLogin(request, USERS.student1);
   const ctx = await browser.newContext({ permissions: ['camera'] });
   await installCanvasCamera(ctx, 'person');
   const page = await ctx.newPage();
@@ -103,16 +105,21 @@ test('@slow frozen tab (no heartbeat > 90 s) → server marks UNKNOWN; client re
   const teacherCtx = await browser.newContext();
   const teacher = await teacherCtx.newPage();
   await uiLogin(teacher, USERS.teacher);
-  const row = teacher.getByTestId('student-row').first();
+  await expect(teacher).toHaveURL(/\/teacher/);
+  const row = teacher.locator(`[data-testid="student-row"][data-student-id="${s1.id}"]`);
+  await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 20_000 });
 
-  const cdp = await ctx.newCDPSession(page);
-  await cdp.send('Page.setWebLifecycleState', { state: 'frozen' });
-  // heartbeat timeout 90 s + scanner period 10 s
-  await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'UNKNOWN', { timeout: 130_000 });
-  await cdp.send('Page.setWebLifecycleState', { state: 'active' });
-  // engine detects the stall, re-confirms seating, sync re-asserts state
-  await expect(state(page)).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 60_000 });
+  // Student's network drops: heartbeats stop reaching the server (camera + local analysis keep running).
+  const downAt = Date.now();
+  await ctx.setOffline(true);
+  // heartbeat timeout 90 s + scanner period 10 s (+ heartbeat phase)
+  await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'UNKNOWN', { timeout: 150_000 });
+  console.log(`[heartbeat] teacher saw UNKNOWN ${Math.round((Date.now() - downAt) / 1000)} s after the network went down`);
+
+  // Reconnect: next heartbeat says timedOut → client re-asserts its engine state (RECONNECTED)
+  await ctx.setOffline(false);
   await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 60_000 });
+  await expect(page.getByTestId('sync-status')).toHaveAttribute('data-pending', '0', { timeout: 30_000 });
   await endStudy(page);
   await ctx.close();
   await teacherCtx.close();

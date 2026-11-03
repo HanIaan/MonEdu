@@ -9,5 +9,9 @@ test('camera permission denied → clear status, state UNKNOWN, no focus accrues
   await expect(page.getByTestId('camera-status')).toHaveAttribute('data-status', /denied|unavailable|error/, { timeout: 30_000 });
   await expect(state(page)).toHaveAttribute('data-state', 'UNKNOWN');
   await page.waitForTimeout(3_000);
-  await expect(page.getByTestId('focus-total')).toHaveAttribute('data-seconds', '0');
+  // focus-total is the DAY total (may include earlier sessions) → assert no increase during this test
+  const focus = async () => Number((await page.getByTestId('focus-total').getAttribute('data-seconds')) ?? '0');
+  const before = await focus();
+  await page.waitForTimeout(5_000);
+  expect((await focus()) - before, 'focus must not accrue').toBe(0);
 });
