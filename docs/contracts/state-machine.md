@@ -8,9 +8,9 @@ to C0.
 
 | State | Meaning | Counts as focus? |
 |---|---|---|
-| `FOCUS_ESTIMATED` | Student confirmed present (face **or** upper body), no sustained phone evidence. *Estimate*, not proof of attention. | **yes** |
+| `FOCUS_ESTIMATED` | Student confirmed present (person detected with face or upper body — v1.2), no sustained phone evidence. *Estimate*, not proof of attention. | **yes** |
 | `DISTRACTION_SUSPECTED` | Present, but a phone has been detected continuously for `phoneSuspectMs`. *Suspicion*, not proof of use. | no |
-| `AWAY` | No face and no upper body for `awayMs`, with good frame quality. | no |
+| `AWAY` | No face, no upper body and no person detection for `awayMs`, with good frame quality. | no |
 | `UNKNOWN` | Cannot measure: camera off/denied, model not loaded/error, low confidence, inference stalled (e.g. background tab), heartbeat lost, session just started. | no |
 | `BREAK` | Student-declared break. Engine inference may pause. | no |
 
@@ -21,12 +21,24 @@ A session always starts in `UNKNOWN` (server reason `SESSION_STARTED`).
 Each inference tick produces a `FrameObservation` (see `frontend/src/features/monitoring/contracts.ts`).
 The engine classifies it as:
 
-- **PRESENT** — `faceScore >= presenceMinScore` **or** upper body visible
-  (both shoulders with landmark visibility `>= poseMinVisibility`).
+v1.2 rule (W1 CCR approved by C0; measured in `frontend/bench/vision/RESULTS.md` §B):
+
+- **PRESENT** — a COCO `person` detection from the object detector (`personScore >= 0.5`; evidence
+  from the most recent detector tick is held for at most 5 s) **and** at least one of:
+  `faceScore >= presenceMinScore`; upper body visible (both shoulders with visibility
+  `>= poseMinVisibility`); `personScore >= 0.7`.
   *Face missing but shoulders visible is PRESENT* (e.g. head down writing).
-- **ABSENT** — frame quality OK, no face and no upper body
-  (`faceScore < absentMaxScore` and pose not visible).
-- **UNCERTAIN** — anything else: grey-zone scores, frame too dark/uniform, a model failed this tick.
+  **A face alone, or shoulders alone, without a person detection is never PRESENT** (pets: BlazeFace
+  scored 0.71–0.79 on cats/dogs, and the pose model reports shoulders on ~15 % of pet photos).
+- **ABSENT** — frame quality OK, `faceScore < absentMaxScore`, upper body not visible, and no person
+  detected in this frame.
+- **UNCERTAIN** — anything else: face/shoulders without a person detection (pet, poster, object
+  detector not run or failed for > 5 s), a person detection below 0.7 without face/shoulders, grey-zone
+  scores, frame too dark/uniform, a model failed this tick. When human-ness is uncertain the engine
+  prefers UNCERTAIN (→ UNKNOWN after `uncertainMs`) over PRESENT.
+
+Measured effect (per frame, @320): pets PRESENT 27/100 → 0/100, empty scenes 6/60 → 0/60, people with
+a hidden face (head turned/bowed) 26/43 → 41/43, upper-body people 98/100 → 99/100.
 
 Phone evidence is evaluated only on PRESENT frames: `phoneScore >= phoneMinScore` for COCO class
 `cell phone`. A phone detection is *never* treated as confirmed usage.
@@ -81,6 +93,11 @@ Notes
 | `phoneMinScore` | 0.5 |
 | `inferenceIntervalMs` | 500 (face + pose) |
 | `phoneIntervalMs` | 1000 (object detector) |
+| `camera` | 640×480 @ 15 fps (`ideal` constraints; v1.2 — was 320×240, see bench §A) |
+
+Engine-internal (not in `EngineConfig`, v1.2): person (COCO) 0.5 detected, 0.7 alone-sufficient,
+held 5 s. Adaptive cadence (low-power): face/pose and detector intervals ×1/1.5/2/3/4, capped at
+2 s / 4 s, when p95 inference > 40 % of the interval; all durations stay elapsed-time based.
 
 ## 4. Server interval accounting
 
