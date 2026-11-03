@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """Owns only the isolated Docker container and subprocesses it starts. No extra dependencies."""
-import json, os, pathlib, secrets, subprocess as sp, sys, time
+import json, os, pathlib, secrets, shutil, subprocess as sp, sys, time
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 RAW=ROOT/'loadtest/results/raw'; RAW.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy(); env.update(JAVA_HOME=sp.check_output(['/usr/libexec/java_home','-v','21'],text=True).strip(), DB_URL='jdbc:postgresql://localhost:5434/study_monitor',DB_USERNAME='study_monitor',DB_PASSWORD=secrets.token_urlsafe(24),JWT_SECRET=secrets.token_urlsafe(48),SERVER_PORT='18080')
 java=env['JAVA_HOME']+'/bin/java'
 envfile=RAW/'environment.json'; envfile.write_text(json.dumps({k:env[k] for k in ('DB_URL','DB_USERNAME','DB_PASSWORD','JWT_SECRET','SERVER_PORT','JAVA_HOME')})); envfile.chmod(0o600)
-backend=None
+backend=None; driver=None; owns_container=False
 
 def sql(query):
     return sp.check_output(['docker','exec','sm-loadtest-pg','psql','-U','study_monitor','-d','study_monitor','-Atc',query],text=True)
 
 def start(label):
+    artifact=RAW/(label+'-server.jar')
+    source=pathlib.Path(sys.argv[1]) if label=='before' and len(sys.argv)>1 else ROOT/'build/libs/study-monitor-backend-0.0.1-SNAPSHOT.jar'
+    shutil.copyfile(source,artifact)
     log=open(RAW/(label+'-server.log'),'w')
-    p=sp.Popen([java,'-Xms256m','-Xmx768m','-jar','build/libs/study-monitor-backend-0.0.1-SNAPSHOT.jar'],env=env,stdout=log,stderr=sp.STDOUT)
+    p=sp.Popen([java,'-Xms256m','-Xmx768m','-jar',str(artifact)],env=env,stdout=log,stderr=sp.STDOUT)
     for _ in range(120):
         if p.poll() is not None: raise RuntimeError('Backend failed; inspect local log')
         try:
@@ -26,6 +29,7 @@ def start(label):
 
 try:
     sp.run(['docker','run','-d','--name','sm-loadtest-pg','-p','127.0.0.1:5434:5432','-e','POSTGRES_DB=study_monitor','-e','POSTGRES_USER=study_monitor','-e','POSTGRES_PASSWORD','postgres:17-alpine','-c','shared_preload_libraries=pg_stat_statements','-c','pg_stat_statements.track=all'],env={**env,'POSTGRES_PASSWORD':env['DB_PASSWORD']},check=True,stdout=sp.DEVNULL)
+    owns_container=True
     for _ in range(60):
         if sp.run(['docker','exec','sm-loadtest-pg','pg_isready','-U','study_monitor'],stdout=sp.DEVNULL,stderr=sp.DEVNULL).returncode==0: break
         time.sleep(1)
@@ -50,8 +54,11 @@ try:
             if driver.returncode: raise RuntimeError(f'{label} {users} driver failed')
             (RAW/f'{label}-{users}-queries.csv').write_text(sql("copy (select calls,round(mean_exec_time::numeric,3) mean_ms,round(max_exec_time::numeric,3) max_ms,rows,query from pg_stat_statements where query not like '%pg_stat%' order by total_exec_time desc limit 40) to stdout with csv header"))
             print(f'COMPLETE {label} {users}',flush=True)
+        time.sleep(27) # allow the 25s ping to discover every closed socket
+        (RAW/(label+'-post-disconnect.txt')).write_text(sp.check_output([env['JAVA_HOME']+'/bin/jcmd',str(backend.pid),'GC.class_histogram'],text=True))
         backend.terminate(); backend.wait(timeout=45); backend=None
     print('ALL SCENARIOS COMPLETE',flush=True)
 finally:
+    if driver and driver.poll() is None: driver.terminate(); driver.wait(timeout=15)
     if backend and backend.poll() is None: backend.terminate(); backend.wait(timeout=45)
-    sp.run(['docker','rm','-f','sm-loadtest-pg'],stdout=sp.DEVNULL)
+    if owns_container: sp.run(['docker','rm','-f','sm-loadtest-pg'],stdout=sp.DEVNULL)

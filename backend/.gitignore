@@ -38,3 +38,4 @@ out/
 
 # Local load-test measurements (summaries are committed).
 /loadtest/results/raw/
+/loadtest/__pycache__/

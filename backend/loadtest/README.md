@@ -8,7 +8,7 @@ starts the backend on **18080**. It refuses an existing container named `sm-load
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 cd backend
 ./gradlew bootJar loadtestClasses
-python3 loadtest/run.py
+python3 loadtest/run.py /absolute/path/to/baseline.jar
 ```
 
 The runner creates random DB/JWT secrets in process environment variables; a mode-0600 local
@@ -17,7 +17,7 @@ gitignored. Never publish that directory wholesale. The container is removed in 
 completion/errors (after a force-kill, manually remove **only** `sm-loadtest-pg`).
 
 The runner first executes baseline 10/100/1000-user scenarios. Before launching, build the desired
-baseline jar. When `results/raw/baseline-complete` appears, build the optimized jar and create
+baseline jar. The server runs from immutable artifact copies, so rebuilding is safe. When `results/raw/baseline-complete` appears, build the optimized jar and create
 `results/raw/continue`. It then repeats the same scenarios and removes its container. Remove old
 marker files before a fresh run. To compare a different baseline, use a separately built jar; do not
 revert or alter another agent's worktree.
@@ -42,3 +42,21 @@ initial SSE establishment occur before measurement; SSE event counts/delay are s
 burst, BCrypt login throughput, WAN/browser behavior, long-lived JWT expiry and multi-instance
 fan-out are outside these results. A closed-loop user waits for its request; the cadence is realistic
 for monitoring, not a saturation benchmark. Quantiles use nearest rank without a histogram dependency.
+
+During the baseline pause, the following optional probes leave the DB in place and stop their own
+backend processes before returning. `probe.py after` takes about 3 minutes (1,000 sockets, reconnect,
+then SIGKILL and 92 seconds offline before restart). Run them sequentially, outside measured scenarios.
+
+```sh
+docker exec -i sm-loadtest-pg psql -U study_monitor -d study_monitor < loadtest/explain.sql > loadtest/results/raw/explain.txt
+python3 loadtest/probe.py before loadtest/results/raw/before-server.jar
+python3 loadtest/probe.py after build/libs/study-monitor-backend-0.0.1-SNAPSHOT.jar
+touch loadtest/results/raw/continue
+```
+
+`explain.sql` inserts 200,000 historical intervals and compares query plans before/after the candidate
+index, then rolls back the fixture and index. Probe JSON includes 30 session-start request timings,
+100 heartbeat timings plus exact SQL calls, and 10 teacher-overview timings plus SQL calls. These
+microbenchmarks are separate from the steady workloads; startup/JIT and sequential local requests
+limit latency comparisons. The retained-heap SSE probe uses one user with 1,000 sockets to avoid
+changing business data; it is not an exact estimate of heap per distinct student under active load.
