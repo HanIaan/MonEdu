@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Visibility Probe</title>
+<style>
+  :root { color-scheme: light dark; font-family: -apple-system, system-ui, sans-serif; }
+  body { margin: 16px; background: Canvas; color: CanvasText; }
+  table { border-collapse: collapse; margin-top: 12px; }
+  th, td { border: 1px solid #8884; padding: 6px 10px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .ok { color: #15803d; font-weight: 600; } .bad { color: #b91c1c; font-weight: 600; }
+  button { font-size: 15px; padding: 6px 12px; margin-right: 8px; }
+  #control { width: 160px; height: 120px; background: #000; }
+</style>
+</head>
+<body>
+<h1 style="font-size:20px">숨겨진 video의 프레임 공급 측정</h1>
+<p>같은 MediaStream을 숨김 방식이 다른 video 요소에 연결하고, 6초 동안 실제로 새 프레임이 들어오는지 측정합니다.
+영상은 이 페이지 밖으로 전송되지 않습니다.</p>
+<button id="runCanvas">테스트 영상으로 측정</button>
+<button id="runCamera">실제 카메라로 측정</button>
+<div id="status" style="margin-top:8px">대기 중</div>
+<table id="out" hidden>
+  <thead><tr><th>방식</th><th>currentTime 증가(s)</th><th>rVFC 프레임</th><th>픽셀 변화 샘플</th><th>판정</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div id="host"></div>
+<script>
+const SECONDS = 6;
+const host = document.getElementById('host');
+const status = (t) => (document.getElementById('status').textContent = t);
+
+function canvasStream() {
+  const c = document.createElement('canvas'); c.width = 320; c.height = 240;
+  const g = c.getContext('2d'); let n = 0;
+  setInterval(() => {
+    n++; g.fillStyle = `hsl(${(n * 7) % 360} 70% 50%)`; g.fillRect(0, 0, 320, 240);
+    g.fillStyle = '#fff'; g.font = '48px sans-serif'; g.fillText(String(n), 100, 140);
+  }, 66);
+  return c.captureStream(15);
+}
+
+const VARIANTS = [
+  ['analysis-host (2×2px, opacity 0.01, fixed)', (v) => Object.assign(v.style, { position: 'fixed', right: '0', bottom: '0', width: '2px', height: '2px', opacity: '0.01', pointerEvents: 'none' }), true],
+  ['display:none', (v) => (v.style.display = 'none'), true],
+  ['detached (not in DOM)', () => {}, false],
+  ['visibility:hidden', (v) => (v.style.visibility = 'hidden'), true],
+  ['offscreen (left:-9999px)', (v) => Object.assign(v.style, { position: 'absolute', left: '-9999px', width: '160px', height: '120px' }), true],
+  ['visible 160×120 (control)', (v) => (v.id = 'control'), true],
+];
+
+async function measure(stream) {
+  host.innerHTML = '';
+  const probe = document.createElement('canvas'); probe.width = 16; probe.height = 12;
+  const pg = probe.getContext('2d', { willReadFrequently: true });
+  const rows = [];
+  for (const [name, style, attach] of VARIANTS) {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute('playsinline', '');
+    style(v); if (attach) host.appendChild(v);
+    v.srcObject = stream;
+    try { await v.play(); } catch (e) { /* recorded below via currentTime */ }
+    const r = { name, v, t0: v.currentTime, rvfc: 0, changes: 0, last: null };
+    if ('requestVideoFrameCallback' in v) { const cb = () => { r.rvfc++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
+    rows.push(r);
+  }
+  const t0 = performance.now();
+  while (performance.now() - t0 < SECONDS * 1000) {
+    await new Promise((res) => setTimeout(res, 250));
+    for (const r of rows) {
+      try {
+        pg.drawImage(r.v, 0, 0, 16, 12);
+        const d = pg.getImageData(0, 0, 16, 12).data; let sum = 0; for (let i = 0; i < d.length; i += 4) sum += d[i] * 3 + d[i + 1] * 5 + d[i + 2];
+        if (r.last !== null && sum !== r.last) r.changes++; r.last = sum;
+      } catch { /* not drawable */ }
+    }
+  }
+  const results = rows.map((r) => {
+    const dt = +(r.v.currentTime - r.t0).toFixed(2);
+    const flowing = dt > SECONDS * 0.6 && r.changes >= 8;
+    return { name: r.name, currentTimeDelta: dt, rvfc: 'requestVideoFrameCallback' in r.v ? r.rvfc : null, pixelChanges: r.changes, paused: r.v.paused, flowing };
+  });
+  const tb = document.querySelector('#out tbody'); tb.innerHTML = '';
+  for (const x of results) {
+    tb.insertAdjacentHTML('beforeend', `<tr><td>${x.name}</td><td>${x.currentTimeDelta}</td><td>${x.rvfc ?? 'n/a'}</td><td>${x.pixelChanges}</td><td class="${x.flowing ? 'ok' : 'bad'}">${x.flowing ? '프레임 공급됨' : '정지/불충분'}</td></tr>`);
+  }
+  document.getElementById('out').hidden = false;
+  stream.getTracks().forEach((t) => t.stop());
+  window.__results = { userAgent: navigator.userAgent, seconds: SECONDS, results };
+  status(`완료 · ${navigator.userAgent}`);
+  return window.__results;
+}
+
+window.__runCanvas = () => measure(canvasStream());
+document.getElementById('runCanvas').onclick = () => { status('측정 중… (6초)'); window.__runCanvas(); };
+document.getElementById('runCamera').onclick = async () => {
+  status('카메라 권한 요청 중…');
+  try { const s = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false }); status('측정 중… (6초)'); await measure(s); }
+  catch (e) { status('카메라 사용 불가: ' + e.name); }
+};
+</script>
+</body>
+</html>

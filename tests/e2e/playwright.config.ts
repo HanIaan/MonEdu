@@ -27,6 +27,13 @@ export default defineConfig({
     { name: 'camera-person', testMatch: /camera-person\..*\.spec\.ts/, use: camera() },
     { name: 'camera-nobody', testMatch: /camera-nobody\..*\.spec\.ts/, use: camera() },
     {
+      // WebKit engine (≈ Safari, but NOT Safari: no Safari power/autoplay policies). Canvas camera only.
+      name: 'webkit-person',
+      testMatch: /camera-person\.monitoring\.spec\.ts/,
+      grep: /teacher sees it live|nobody in frame/,
+      use: { ...devices['Desktop Safari'] },
+    },
+    {
       name: 'camera-denied',
       testMatch: /camera-denied\..*\.spec\.ts/,
       // No fake-UI flag and no permission grant → getUserMedia rejects with NotAllowedError.
