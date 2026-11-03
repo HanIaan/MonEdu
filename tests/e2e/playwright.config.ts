@@ -35,6 +35,25 @@ export default defineConfig({
     },
     // Opt-in (SOAK_LONG=1): 30 min+ soak with its own browser server for process-level CPU sampling.
     ...(process.env.SOAK_LONG === '1' ? [{ name: 'soak-long', testMatch: /soak\.long\.spec\.ts/ }] : []),
+    // Opt-in (WEBCAM_EVAL=1): real-webcam field evaluation, headed, human-in-the-loop consent. Never records
+    // media: trace/screenshot/video off. WEBCAM_EVAL_FAKE=1 = headless harness dry run with the canvas camera.
+    ...(process.env.WEBCAM_EVAL === '1'
+      ? [
+          {
+            name: 'webcam-eval',
+            testMatch: /webcam\.eval\.spec\.ts/,
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1280, height: 860 },
+              headless: process.env.WEBCAM_EVAL_FAKE === '1',
+              channel: process.env.WEBCAM_EVAL_CHANNEL || undefined,
+              trace: 'off' as const,
+              screenshot: 'off' as const,
+              video: 'off' as const,
+            },
+          },
+        ]
+      : []),
     {
       name: 'camera-denied',
       testMatch: /camera-denied\..*\.spec\.ts/,

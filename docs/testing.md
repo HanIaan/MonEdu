@@ -32,6 +32,7 @@
 | long-run CPU/FPS/latency (Phase 2) | `SOAK_LONG=1` project `soak-long` (process-tree CPU via `ps`, inference p95, server latency, accounting) |
 | backend load 10/100/1000 users | `backend/loadtest` (W2) — see its RESULTS.md |
 | phone / pet / sleep accuracy | `frontend/bench/vision` (W1) — see its RESULTS.md |
+| real-webcam field accuracy (seated / writing / reading / phone / away / head down) | `WEBCAM_EVAL=1` project `webcam-eval` — human-in-the-loop, see `docs/webcam-eval.md` (no media recorded) |
 
 ## Commands
 ```bash
@@ -44,6 +45,11 @@ npm test                                           # incl. @slow (AWAY 30 s, hea
 # Phase 2 long soak (own browser server; 30 min default; scene goes empty 45 s every 10 min)
 scripts/ensure-soak-user.sh                        # adds soak@demo.local to the local dev DB (additive)
 SOAK_LONG=1 SOAK_MINUTES=30 npx playwright test --project soak-long
+
+# Real-webcam field evaluation (headed, ~10 min, the person consents in the app; no media recorded)
+WEBCAM_EVAL=1 WEBCAM_EVAL_NOTE="lighting, camera, distance" npx playwright test --project webcam-eval
+WEBCAM_EVAL=1 WEBCAM_EVAL_FAKE=1 npx playwright test --project webcam-eval   # harness dry run (photos, not field data)
+node scripts/webcam-eval-summary.mjs                                         # aggregate runs
 ```
 
 **Real Safari is not covered by any automated test.** Playwright WebKit shares the engine only;
