@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EngineTransition, FrameObservation, VisionPipeline } from '../contracts';
+import { DEFAULT_ENGINE_CONFIG, type EngineTransition, type FrameObservation, type VisionPipeline } from '../contracts';
 import { createMonitoringController, type ControllerDeps } from './index';
 
 const T0 = Date.parse('2026-11-03T00:13:22.000Z');
@@ -146,12 +146,19 @@ afterEach(() => {
 });
 
 describe('MonitoringController', () => {
-  it('start → camera with low-res constraints, models loaded, SEATED_CONFIRMED emitted', async () => {
+  it('start → camera with DEFAULT_ENGINE_CONFIG.camera constraints, models loaded, SEATED_CONFIRMED emitted', async () => {
     const { ctrl, getUserMedia, transitions, videoEl, pipeline, video } = setup();
     await ctrl.start(videoEl);
     const constraints = getUserMedia.mock.calls[0]![0] as MediaStreamConstraints;
     expect(constraints.audio).toBe(false);
-    expect(constraints.video).toMatchObject({ width: { ideal: 320 }, height: { ideal: 240 } });
+    // Resolution-agnostic: whatever DEFAULT_ENGINE_CONFIG.camera says is exactly what is requested.
+    const cam = DEFAULT_ENGINE_CONFIG.camera;
+    expect(constraints.video).toMatchObject({
+      width: { ideal: cam.width },
+      height: { ideal: cam.height },
+      frameRate: { ideal: cam.frameRate, max: cam.frameRate },
+      facingMode: 'user',
+    });
     expect(video.srcObject).not.toBeNull();
     expect(pipeline.load).toHaveBeenCalledOnce();
     expect(ctrl.getSnapshot()).toMatchObject({ cameraStatus: 'active', modelStatus: 'ready', inferenceBackend: 'WORKER', engineState: 'UNKNOWN' });
