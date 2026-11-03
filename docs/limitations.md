@@ -1,4 +1,4 @@
-# Known technical limitations (MVP)
+# Known technical limitations (MVP + Phase 2)
 
 Measured results are filled in from actual runs (see "Measurements"); anything not yet measured is
 marked as such.
@@ -9,15 +9,23 @@ marked as such.
 - **Phone** = COCO `cell phone` *object* detected (EfficientDet-Lite0) near a present student for 20 s.
   Small, dark, edge-on or hand-occluded phones are often missed; remotes, calculators and dark
   rectangles can be false positives. It never proves *use*.
-- **Pets read as present:** BlazeFace detected cat/dog faces at 0.71–0.79 (≥ presenceMinScore 0.6) on
-  MediaPipe's `cats_and_dogs.jpg` (measured 2026-11-03). A pet alone in frame can keep the state
-  FOCUS_ESTIMATED / prevent AWAY. (Not mitigated in v1; a future fix could require the object
-  detector's `person` class or shoulders for presence.)
-- **Phone at 320×240:** on W1's still-image check a clearly visible phone scored 0.64 at full resolution
-  but 0.45 at 320×240 (< phoneMinScore 0.5) — the low-res camera setting trades phone recall for CPU.
-  See `frontend/public/models/README.md` → Verification.
-- **Presence** uses face **or** shoulders, so head-down writing is not "away"; a student far from the
-  camera or out of frame laterally may read as absent.
+- **Pets (mitigated in v1.2):** v1 read cat/dog faces as present (BlazeFace 0.71–0.79). Presence now
+  also requires a COCO `person` detection (state-machine.md §2). Measured per frame: pets PRESENT
+  27/100 → 0/100, empty scenes 6/60 → 0/60 (W1 bench §B); E2E `pets only → never FOCUS` passes.
+  Remaining: a **person photo/poster** on the wall can still read as present (person + face).
+- **Phone recall is limited** (v1.2: camera 640×480, EfficientDet-Lite0 int8, threshold 0.5 unchanged):
+  COCO recall 0.31 → 0.38 at precision 1.00 (0/150 false positives incl. 75 hard negatives); medium
+  phones 0.37 → 0.50, phones < 0.5 % of the frame ≈ 0.03. Commons phone-in-hand photos 6/11.
+  Borderline phones scoring 0.45–0.52 per frame mostly do **not** trigger suspicion. Lite2 would raise
+  recall to 0.51 at 3× detector cost (+39 MB wasm) — not shipped. Test sets are COCO/Commons stills,
+  not real study-room webcam video (`frontend/bench/vision/RESULTS.md` §A, test-set limits).
+- **Sleep / eyes closed are NOT detected.** Head-on-desk sleeping and head-down writing give the same
+  signals with the current models; eyes-closed needs a new model (Face Landmarker blendshapes) plus
+  labelled temporal data. Research only (bench §C); nothing shipped.
+- **Presence** = person detection + (face or shoulders or strong person score), so head-down writing
+  is not "away" (COCO face-hidden people 41/43 PRESENT); a student far from the camera or out of frame
+  laterally may read as absent. If the object detector fails, face/shoulders alone become UNCERTAIN →
+  UNKNOWN (safe, but no focus is counted).
 - Lighting: very dark frames are classified `LOW` quality → `UNKNOWN` rather than guessed.
 - No identity verification: the system cannot tell *who* is in front of the camera (by design — no
   face embeddings are computed or stored).
@@ -40,16 +48,26 @@ marked as such.
 
 ## Platform
 - Turbopack additionally emits the raw `vision.worker.ts` source as an unused static asset
-  (no secrets; harmless). Inference runs in a module Worker; if it cannot start the pipeline falls back
+  (no secrets; harmless). Inference runs in a classic Worker; if it cannot start the pipeline falls back
   to the main thread (measured by W1: 404 → 1.3 s, hang → 5.3 s).
-- Requires a browser with `getUserMedia`, WebAssembly and (preferably) module Workers + `ImageBitmap`.
-  Tested with Chromium (Playwright). Safari/Firefox not verified in this MVP.
+- **Low-end devices (v1.2 adaptive cadence):** when p95 inference > 40 % of the interval the engine slows
+  face/pose and detector cadence (up to 2 s / 4 s). Accounting stays elapsed-time based; transitions are
+  emitted up to one interval later and intermittently visible phones are caught less often (CPU-throttle
+  emulation 1×/4×/8×: same transitions, +0.7…+2.5 s later). Real low-end hardware was **not** measured.
+- Requires a browser with `getUserMedia`, WebAssembly and (preferably) Workers + `ImageBitmap`.
+  Automated: Chromium and the Playwright **WebKit engine**. **Real Safari.app, Firefox and real webcams are
+  not verified** — see `docs/safari-manual-checklist.md`.
 - Camera access requires a secure context (HTTPS or `localhost`).
 - One active session per student; opening the study page in a second tab replaces the first session.
 
 ## Security / ops (MVP scope)
 - JWT stored in `sessionStorage` (XSS would expose it; no refresh tokens; 12 h expiry).
 - SSE fan-out is in-memory (single backend instance). Horizontal scaling needs a shared pub/sub.
+- Load measured on one shared dev machine (W2, `backend/loadtest/RESULTS.md`): 1,000 simulated students
+  + 1,010 SSE connections, 180 s steady state, 0 errors, heartbeat p95 8.5 ms, teacher overview p95
+  24 ms. Not measured: >1,000 users, multi-hour load, network latency, a separate DB host.
+- Flyway runs with `out-of-order: true` because the demo seed is versioned `V1000`; new schema migrations
+  (V2…) must stay additive and monotonically numbered.
 - No rate limiting, account management UI, password reset, or audit log UI.
 
 ## Measurements (2026-11-03, Apple Silicon, Playwright 1.64.1)

@@ -4,7 +4,7 @@
  * teacher dashboard updates live via SSE, sync queue recovers after offline.
  */
 import { expect, test } from '@playwright/test';
-import { apiLogin, endStudy, installCanvasCamera, startStudy, state, uiLogin, USERS } from './helpers';
+import { API, apiLogin, auth, endStudy, installCanvasCamera, seoulToday, startStudy, state, uiLogin, USERS } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -97,7 +97,9 @@ test('offline → events queue; back online → queue drains', async ({ browser 
 
 test('@slow heartbeat lost > 90 s (network down) → server marks UNKNOWN, teacher sees it; reconnect re-syncs', async ({ browser, request }) => {
   test.setTimeout(300_000);
-  const { user: s1 } = await apiLogin(request, USERS.student1);
+  const { user: s1, token: s1Token } = await apiLogin(request, USERS.student1);
+  const totals = async () =>
+    (await (await request.get(`${API}/api/v1/me/study-days/${seoulToday()}`, { headers: auth(s1Token) })).json()).totals as { unknownSeconds: number };
   const ctx = await browser.newContext({ permissions: ['camera'] });
   await installCanvasCamera(ctx, 'person');
   const page = await ctx.newPage();
@@ -113,6 +115,7 @@ test('@slow heartbeat lost > 90 s (network down) → server marks UNKNOWN, teach
   await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 20_000 });
 
   // Student's network drops: heartbeats stop reaching the server (camera + local analysis keep running).
+  const unknownBefore = (await totals()).unknownSeconds;
   const downAt = Date.now();
   await ctx.setOffline(true);
   // heartbeat timeout 90 s + scanner period 10 s (+ heartbeat phase)
@@ -120,9 +123,16 @@ test('@slow heartbeat lost > 90 s (network down) → server marks UNKNOWN, teach
   console.log(`[heartbeat] teacher saw UNKNOWN ${Math.round((Date.now() - downAt) / 1000)} s after the network went down`);
 
   // Reconnect: next heartbeat says timedOut → client re-asserts its engine state (RECONNECTED)
+  const upAt = Date.now();
   await ctx.setOffline(false);
   await expect(row.getByTestId('student-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED', { timeout: 60_000 });
   await expect(page.getByTestId('sync-status')).toHaveAttribute('data-pending', '0', { timeout: 30_000 });
+  // Contract v1.2 timeout recovery: the outage stays UNKNOWN even if the heartbeat or old queued events
+  // arrive first after reconnect — it must never be credited retroactively as focus.
+  const outageSec = (upAt - downAt) / 1000;
+  const unknownAdded = (await totals()).unknownSeconds - unknownBefore;
+  console.log(`[heartbeat] outage ${outageSec.toFixed(0)} s → UNKNOWN added ${unknownAdded} s`);
+  expect(unknownAdded, 'outage recorded as UNKNOWN, not focus').toBeGreaterThanOrEqual(Math.floor(outageSec) - 10);
   await endStudy(page);
   await ctx.close();
   await teacherCtx.close();
