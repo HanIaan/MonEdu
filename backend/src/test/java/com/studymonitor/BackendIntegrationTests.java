@@ -527,4 +527,51 @@ class BackendIntegrationTests {
         assertThat(count("monitoring_events")).isEqualTo(2);
         assertThat(sessions.get(STUDENT,s.id()).lastSeq()).isEqualTo(1);
     }
+
+    @Test void batchedOverviewMatchesIndividualReportsIncludingPreviousDayActiveSession() {
+        clock.set("2026-11-02T14:59:00Z"); Session previous=start();
+        change(previous,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
+        clock.set("2026-11-02T15:01:00Z");
+        var second=sessions.start(STUDENT2,new StartRequest(clock.instant(),null));
+        sessions.transition(STUDENT2,second.id(),request(1,State.AWAY,Reason.PRESENCE_LOST,clock.instant()));
+        clock.advance(20);
+        var overview=reports.students(TEACHER);
+        for(var item:overview) {
+            Report own=reports.mine(item.student().id(),LocalDate.parse("2026-11-03"));
+            assertThat(item.today().totals()).isEqualTo(own.totals());
+            assertThat(item.today().firstSeatedAt()).isEqualTo(own.firstSeatedAt());
+            assertThat(item.today().currentStreakSeconds()).isEqualTo(own.currentStreakSeconds());
+            assertThat(item.today().longestStreakSeconds()).isEqualTo(own.longestStreakSeconds());
+        }
+        var first=overview.stream().filter(item -> item.student().id().equals(STUDENT)).findFirst().orElseThrow();
+        assertThat(first.activeSessionId()).isEqualTo(previous.id());
+        assertThat(first.currentState()).isEqualTo(State.FOCUS_ESTIMATED);
+        assertThat(first.today().totals().focusSeconds()).isZero();
+        assertThat(first.today().lateStatus()).isEqualTo(LateStatus.NOT_SEATED);
+    }
+    static class LifecycleEmitter extends RecordingEmitter {
+        Runnable completion,timeout; java.util.function.Consumer<Throwable> error;
+        @Override public void onCompletion(Runnable callback) { completion=callback; }
+        @Override public void onTimeout(Runnable callback) { timeout=callback; }
+        @Override public void onError(java.util.function.Consumer<Throwable> callback) { error=callback; }
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"completion","timeout","error"})
+    void sseDisconnectCallbacksRemoveRegistryAndReconnectionReceivesFreshEvents(String cause) {
+        for(int i=0;i<100;i++) {
+            var disconnected=new LifecycleEmitter(); streams.register(STUDENT,disconnected);
+            assertThat(streams.subscriberCount()).isEqualTo(1);
+            switch(cause) {
+                case "completion" -> disconnected.completion.run();
+                case "timeout" -> disconnected.timeout.run();
+                default -> disconnected.error.accept(new java.io.IOException("network lost"));
+            }
+            disconnected.completion.run(); // repeated container callbacks must remain harmless
+            assertThat(streams.subscriberCount()).isZero();
+        }
+        var fresh=new LifecycleEmitter(); streams.register(STUDENT,fresh);
+        Session s=start(); clock.advance(1); change(s,1,State.AWAY,Reason.PRESENCE_LOST);
+        assertThat(fresh.events()).hasSize(2);
+        assertThat(fresh.events().getLast().state()).isEqualTo(State.AWAY);
+        fresh.completion.run(); assertThat(streams.subscriberCount()).isZero();
+    }
 }
