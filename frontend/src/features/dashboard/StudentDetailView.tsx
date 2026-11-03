@@ -1,4 +1,5 @@
 'use client';
+import { memo } from 'react';
 import type { ApiError, StudyDayReport } from '@/lib/api';
 import { formatDuration, formatSeoulTime } from '@/lib/time';
 import { AccessDenied } from '@/components/AccessDenied';
@@ -26,7 +27,7 @@ function SessionStatusText({ status }: { status: 'ACTIVE' | 'ENDED' }) {
 }
 
 /** Teacher detail view: date-scoped summary, day timeline and session list. */
-export function StudentDetailView({
+export const StudentDetailView = memo(function StudentDetailView({
   studentId,
   date,
   report,
@@ -186,4 +187,4 @@ export function StudentDetailView({
       ) : null}
     </div>
   );
-}
+});

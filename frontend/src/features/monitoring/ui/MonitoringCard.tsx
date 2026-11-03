@@ -1,14 +1,28 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import type { ActivityState, CameraStatus, FrameObservation, ModelStatus, SessionStatus } from '@/features/monitoring/contracts';
+import type {
+  ActivityState,
+  CameraStatus,
+  FrameObservation,
+  ModelStatus,
+  MonitoringPerf,
+  SessionStatus,
+} from '@/features/monitoring/contracts';
 import { StateBadge } from '@/components/StateBadge';
 import {
+  CAMERA_STATUS_DETAIL,
   CAMERA_STATUS_LABEL,
+  MODEL_STATUS_DETAIL,
   MODEL_STATUS_LABEL,
   TONE_DOT,
   TONE_TEXT,
+  cameraNeedsAttention,
   cameraStatusTone,
+  deriveUnavailableReason,
+  modelNeedsAttention,
   modelStatusTone,
+  transitionReasonText,
 } from './status';
 
 const FRAMING_STORAGE_KEY = 'sm.framingDone';
@@ -99,6 +113,14 @@ export interface MonitoringCardProps {
   /** Preview only — never used for inference. */
   cameraStream: MediaStream | null;
   cameraError?: string | null;
+  /** Epoch ms of the last processed frame (stall detection). */
+  lastFrameAt?: number | null;
+  /** v1.2 perf telemetry; adaptive-cadence fields may be undefined until the engine reports them. */
+  perf?: MonitoringPerf;
+  /** Client network state; false hints at a heartbeat timeout. */
+  online?: boolean;
+  /** Injected clock for deterministic cause derivation (tests). */
+  now?: number;
   onPause: () => void;
   onResume: () => void;
 }
@@ -118,6 +140,10 @@ export function MonitoringCard({
   sessionStatus,
   cameraStream,
   cameraError,
+  lastFrameAt = null,
+  perf,
+  online,
+  now,
   onPause,
   onResume,
 }: MonitoringCardProps) {
@@ -132,6 +158,35 @@ export function MonitoringCard({
   const sessionActive = sessionStatus === 'active';
   const faceOk = cameraLive && Boolean(lastObservation?.faceDetected);
   const bodyOk = cameraLive && Boolean(lastObservation?.upperBodyDetected);
+
+  const unavailableReason =
+    engineState === 'UNKNOWN'
+      ? deriveUnavailableReason({
+          engineState,
+          cameraStatus,
+          modelStatus,
+          paused,
+          lastFrameAt,
+          now: now ?? 0,
+          online,
+        })
+      : null;
+  const unavailableText =
+    transitionReasonText(unavailableReason) ??
+    (sessionActive ? '측정 근거가 충분하지 않습니다.' : '아직 모니터링이 시작되지 않았습니다.');
+  const needsRetry =
+    sessionActive && !paused && (cameraNeedsAttention(cameraStatus) || modelNeedsAttention(modelStatus));
+
+  const lowPower = perf?.lowPower === true;
+  const intervalSeconds = perf?.effectiveIntervalMs !== undefined ? perf.effectiveIntervalMs / 1000 : null;
+  const intervalLabel =
+    intervalSeconds === null
+      ? '감지 간격 조정됨'
+      : `감지 간격 ${Number.isInteger(intervalSeconds) ? intervalSeconds : intervalSeconds.toFixed(1)}초`;
+  const lowPowerTooltip =
+    intervalSeconds === null
+      ? '기기 성능에 맞춰 감지 간격을 늘렸습니다. 상태 변화 반영이 조금 늦을 수 있지만 학습 시간 계산은 동일합니다.'
+      : `기기 성능에 맞춰 감지 간격을 ${Number.isInteger(intervalSeconds) ? intervalSeconds : intervalSeconds.toFixed(1)}초로 늘렸습니다. 상태 변화가 최대 ${Number.isInteger(intervalSeconds) ? intervalSeconds : intervalSeconds.toFixed(1)}초 늦게 반영될 수 있지만, 학습 시간 계산은 동일합니다.`;
 
   // First-time setup: the first time the camera becomes active, offer a framing check.
   useEffect(() => {
@@ -181,7 +236,10 @@ export function MonitoringCard({
 
       <div className="space-y-3 p-4">
         {cameraLive ? (
-          <p className="flex items-center gap-2 rounded-md bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+          <p
+            data-testid="camera-active-indicator"
+            className="flex items-center gap-2 rounded-md bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
+          >
             <span aria-hidden="true" className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
@@ -217,7 +275,74 @@ export function MonitoringCard({
             // Raw rate; 0 when the camera is not measuring.
             dataFps={fps.toFixed(1)}
           />
+          {perf?.p95InferenceMs !== undefined ? (
+            <StatusRow
+              label="p95 추론 시간"
+              value={`${Math.round(perf.p95InferenceMs)} ms`}
+              tone="ok"
+              testId="p95-inference"
+            />
+          ) : null}
         </dl>
+
+        <div className="space-y-1">
+          <p
+            data-testid="camera-status-cause"
+            data-status={cameraStatus}
+            className={`text-[11px] leading-relaxed ${
+              cameraNeedsAttention(cameraStatus) ? 'font-medium text-rose-700' : 'text-slate-500'
+            }`}
+          >
+            {cameraError ?? CAMERA_STATUS_DETAIL[cameraStatus]}
+          </p>
+          <p
+            data-testid="model-status-cause"
+            data-status={modelStatus}
+            className={`text-[11px] leading-relaxed ${
+              modelNeedsAttention(modelStatus) ? 'font-medium text-rose-700' : 'text-slate-500'
+            }`}
+          >
+            {MODEL_STATUS_DETAIL[modelStatus]}
+          </p>
+        </div>
+
+        {lowPower ? (
+          <p
+            data-testid="low-power-notice"
+            data-interval-ms={perf?.effectiveIntervalMs}
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800"
+          >
+            <span className="font-semibold">저사양 모드: {intervalLabel}</span>
+            <span className="sr-only"> — {lowPowerTooltip}</span>
+            <span aria-hidden="true" title={lowPowerTooltip} className="ml-1 cursor-help underline decoration-dotted">
+              ?
+            </span>
+          </p>
+        ) : null}
+
+        {engineState === 'UNKNOWN' ? (
+          <div
+            data-testid="unknown-state"
+            data-reason={unavailableReason ?? 'NONE'}
+            className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2"
+          >
+            <p className="text-xs font-semibold text-slate-700">측정 불가</p>
+            <p data-testid="unknown-state-reason" className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
+              {unavailableText}
+            </p>
+          </div>
+        ) : null}
+
+        {needsRetry ? (
+          <button
+            type="button"
+            data-testid="monitoring-retry"
+            onClick={onResume}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          >
+            다시 시도
+          </button>
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -306,9 +431,17 @@ export function MonitoringCard({
           </p>
         ) : null}
 
-        <p className="text-[11px] leading-relaxed text-slate-500">
-          영상은 브라우저 안에서만 분석되며 서버로 전송·저장되지 않습니다. 미리보기는 보기 전용이며 분석을
-          제어하지 않습니다.
+        <p data-testid="privacy-notice" className="text-[11px] leading-relaxed text-slate-500">
+          영상은 <strong className="font-semibold text-slate-700">브라우저 안에서만</strong> 분석되며 서버로
+          전송되거나 저장되지 않습니다. 미리보기는 보기 전용이며 분석을 제어하지 않습니다.{' '}
+          <Link
+            href="/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+          >
+            개인정보 처리 안내
+          </Link>
         </p>
       </div>
     </section>

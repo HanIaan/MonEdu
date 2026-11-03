@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 export type StatTone = 'default' | 'focus' | 'warn' | 'danger' | 'muted' | 'info';
 
@@ -23,22 +23,35 @@ export interface StatCardProps {
    * Used by the E2E contract for duration/lateness cards.
    */
   seconds?: number | null;
+  /** `lg` emphasises the primary metric (e.g. today's focus total). */
+  size?: 'md' | 'lg';
   className?: string;
 }
 
-export function StatCard({ label, value, hint, tone = 'default', testId, seconds, className = '' }: StatCardProps) {
+/** Leaf card; memoised so dashboard snapshot/table re-renders do not re-render the stats. */
+export const StatCard = memo(function StatCard({
+  label,
+  value,
+  hint,
+  tone = 'default',
+  testId,
+  seconds,
+  size = 'md',
+  className = '',
+}: StatCardProps) {
   const hasSeconds = seconds !== undefined;
+  const valueSize = size === 'lg' ? 'text-3xl sm:text-4xl' : 'text-2xl';
   return (
     <div className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
       <dt className="text-xs font-medium tracking-wide text-slate-500">{label}</dt>
       <dd
         data-testid={testId}
         data-seconds={hasSeconds ? (seconds === null ? '' : Math.max(0, Math.floor(seconds))) : undefined}
-        className={`mt-1.5 text-2xl font-semibold tabular-nums tracking-tight ${TONE_VALUE[tone]}`}
+        className={`mt-1.5 ${valueSize} font-semibold tabular-nums tracking-tight ${TONE_VALUE[tone]}`}
       >
         {value}
       </dd>
       {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
     </div>
   );
-}
+});

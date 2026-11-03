@@ -100,7 +100,8 @@ function tooltipFor(segment: Segment): string {
   const start = formatSeoulTime(segment.interval.startedAt);
   const end = segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '진행 중';
   const duration = formatDuration(segment.interval.durationSeconds);
-  return `${meta.label} · ${start}–${end} · ${duration}`;
+  const reason = segment.interval.reason ? ` · ${reasonText(segment.interval.reason)}` : '';
+  return `${meta.label} · ${start}–${end} · ${duration}${reason}`;
 }
 
 /**
@@ -118,18 +119,16 @@ export function Timeline({ intervals, computedAt, className = '' }: TimelineProp
     );
   }
 
-  const spanLabel = `${formatSeoulTime(new Date(spanStart))} – ${formatSeoulTime(new Date(spanEnd))}`;
-
   return (
     <div className={className}>
       <div data-testid="timeline" role="group" aria-label="시간대별 활동 타임라인">
-        <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+        <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-600">
           <span>{formatSeoulTime(new Date(spanStart))}</span>
-          <span>{spanLabel}</span>
+          <span className="text-slate-500">Asia/Seoul (KST)</span>
           <span>{formatSeoulTime(new Date(spanEnd))}</span>
         </div>
 
-        <div className="flex h-10 w-full overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+        <div className="flex h-12 w-full overflow-hidden rounded-md border border-slate-300 bg-slate-100">
           {segments.map((segment, index) => {
             const meta = STATE_META[segment.interval.state];
             return (
@@ -161,13 +160,16 @@ export function Timeline({ intervals, computedAt, className = '' }: TimelineProp
           })}
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5" aria-hidden="true">
-          {(Object.keys(STATE_META) as Array<keyof typeof STATE_META>).map((state) => (
-            <span key={state} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
-              <span className={`h-2.5 w-2.5 rounded-sm ${STATE_META[state].segment}`} />
-              {STATE_META[state].label}
-            </span>
-          ))}
+        <div data-testid="timeline-legend" className="mt-3">
+          <p className="mb-1.5 text-[11px] font-semibold text-slate-500">범례 (색과 함께 상태 이름으로 구분)</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {(Object.keys(STATE_META) as Array<keyof typeof STATE_META>).map((state) => (
+              <span key={state} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+                <span aria-hidden="true" className={`h-3 w-3 rounded-sm ring-1 ring-inset ring-slate-900/10 ${STATE_META[state].segment}`} />
+                {STATE_META[state].label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
