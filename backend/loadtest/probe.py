@@ -26,10 +26,10 @@ def heap():
     sp.check_output([env['JAVA_HOME']+'/bin/jcmd',str(server.pid),'GC.run'])
     return sp.check_output([env['JAVA_HOME']+'/bin/jcmd',str(server.pid),'GC.heap_info'],text=True)
 def histogram(): return sp.check_output([env['JAVA_HOME']+'/bin/jcmd',str(server.pid),'GC.class_histogram'],text=True)
-def start():
+def start(recovery=False):
     with socket.socket() as s:
         assert s.connect_ex(('localhost',18080))!=0,'18080 already in use'
-    p=sp.Popen([java,'-Xms256m','-Xmx768m','-jar',str(artifact)],env=env,stdout=open(RAW/(label+'-probe-server.log'),'a'),stderr=sp.STDOUT)
+    p=sp.Popen([java,'-Xms256m','-Xmx768m','-jar',str(artifact)],env={**env,'APP_MONITORING_TIMEOUT_SCAN_INTERVAL':'PT10S' if recovery else 'PT1H'},stdout=open(RAW/(label+'-probe-server.log'),'a'),stderr=sp.STDOUT)
     for _ in range(60):
         assert p.poll() is None,'probe backend failed'
         try:
@@ -60,6 +60,7 @@ try:
     for _ in range(100):
         t=time.monotonic(); request(path+'/heartbeat',dict(sentAt=stamp(),clientState='FOCUS_ESTIMATED',cameraActive=True,pageVisible=True,lastSeq=1));heartbeat_times.append((time.monotonic()-t)*1000)
     output['heartbeatLatencyMs']=sorted(heartbeat_times)
+    print(label+' heartbeat SQL probe complete',flush=True)
     output['heartbeatQueries']=sql("copy (select calls,round(mean_exec_time::numeric,3),query from pg_stat_statements where query not like '%pg_stat%' order by calls desc) to stdout with csv header")
     sql('select pg_stat_statements_reset()')
     overview_times=[]
@@ -77,6 +78,7 @@ try:
         del sockets,c,r
         time.sleep(27)
         output['heapAfterDisconnect']=heap(); output['histogramAfterDisconnect']=histogram()
+        print(label+' idle SSE memory/cleanup probe complete',flush=True)
         c,r=stream(); r.close();c.close()
         transition(session,2,'AWAY','PRESENCE_LOST') # event missed during simulated network loss
         c,r=stream()
@@ -92,17 +94,25 @@ try:
         request(path+'/heartbeat',dict(sentAt=stamp(),clientState='FOCUS_ESTIMATED',cameraActive=True,pageVisible=True,lastSeq=3))
         verified=request(path)['verifiedUntil']; server.kill();server.wait();server=None
         time.sleep(92)
-        server=start()
+        server=start(recovery=True)
         for _ in range(20):
             recovered=request(path)
             if recovered['currentState']=='UNKNOWN': break
             time.sleep(1)
         assert recovered['currentState']=='UNKNOWN',recovered
         assert recovered['currentStateSince']==verified,(recovered,verified)
-        closed=sql("select ended_at=verified_until from activity_intervals a join study_sessions s on s.id=a.session_id where a.session_id='"+session+"' and a.state='FOCUS_ESTIMATED' order by a.started_at desc limit 1").strip()
+        closed=sql("select a.ended_at=s.verified_until from activity_intervals a join study_sessions s on s.id=a.session_id where a.session_id='"+session+"' and a.state='FOCUS_ESTIMATED' order by a.started_at desc limit 1").strip()
         assert closed=='t',closed
         output['abruptRestart']='PASS: SIGKILL, 92 seconds offline, persisted ACTIVE session becomes UNKNOWN at exact verifiedUntil; focus interval closed there'
+        # Audit the literal contract clamp after timeout, without changing the accounting rule.
+        date=recovered['studyDate']; before=request('/api/v1/me/study-days/'+date)['totals']['focusSeconds']
+        request(path+'/transitions',dict(eventId=str(uuid.uuid4()),seq=4,state='FOCUS_ESTIMATED',reason='RECONNECTED',detectedAt=recovered['startedAt']))
+        request(path+'/heartbeat',dict(sentAt=stamp(),clientState='FOCUS_ESTIMATED',cameraActive=True,pageVisible=True,lastSeq=4))
+        after=request('/api/v1/me/study-days/'+date)['totals']['focusSeconds']
+        output['queuedRecoveryGapSeconds']=after-before
+        output['queuedRecoveryNote']='Literal max(detectedAt,currentInterval.startedAt) clamp permits a queued old focus event followed by heartbeat to credit an offline gap; contract clarification required to change that rule.'
     (RAW/(label+'-probe.json')).write_text(json.dumps(output,indent=2))
     print(label+' probes PASS',flush=True)
 finally:
+    (RAW/(label+'-probe-partial.json')).write_text(json.dumps(output,indent=2))
     if server and server.poll() is None:server.terminate();server.wait(timeout=45)
