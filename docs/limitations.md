@@ -128,3 +128,29 @@ laptops. A multi-hour soak and real-webcam CPU profiling were not run.
 - `canvas.captureStream(15)` emits identical frames even when drawing stops; use
   `captureStream(0)` + `requestFrame()` to simulate a frozen camera.
 
+
+## Phase 2 measurements (2026-11-04)
+
+### 30-min soak — production build, Chromium headless, canvas camera, 640×480, preview closed
+`SOAK_LONG=1 SOAK_MINUTES=30` (`tests/e2e/specs/soak.long.spec.ts`), 45 s empty scene every 10 min,
+1-min load average 1.5–3.4 during the run.
+
+| Metric | Value (mean of 29 one-minute samples after warm-up) | Source |
+|---|---|---|
+| Whole-browser CPU (all Chromium processes) | 30.7 % of one core (incl. GPU process 14.1 %) | `ps` CPU time, measured |
+| Page renderer process | 11.2 % | `ps`, measured |
+| Main thread | 1.0 % | CDP TaskDuration (wall time) |
+| AI worker | ≈ 10.2 % | **derived** = renderer − main |
+| Inference | 2.0 fps, mean 42.8 ms, p95 74.9 ms; low-power mode never engaged | `window.__smDiag` |
+| JS heap | 6.29 → 6.43 MB (max 6.5) | CDP |
+| Browser RSS | 491 → 452 MB (fluctuates 412–511) | `ps` |
+| Event listeners / DOM nodes | 378 → 378 / 996 → 1092 | CDP |
+| Camera frame gaps > 2 s | 0 (max gap 508 ms) | `__smDiag` |
+| Server latency (from the browser) | heartbeat p50 14 / p95 24 / p99 46 ms (n=61); transitions p95 38 ms; day report p95 32 ms | Resource Timing |
+| Accounting | focus +1715 s, away +90 s (scripted 2×45 s), unknown 0 s ≈ elapsed | day report API |
+
+The GPU-process share is largely the synthetic canvas camera (640×480 redraw + captureStream at 15 fps);
+a real webcam has a different (unmeasured) capture cost. Compared with Phase 1's 5-min soak (dev build,
+heap 12.6 → 13.0 MB, listeners 665, main thread 15.8 % measured under load) the production build uses
+about half the heap and fewer listeners; the main-thread figures are not comparable (see
+`docs/testing.md` → Measurement notes). **Not run:** 2-hour soak, real webcam, low-end hardware.
