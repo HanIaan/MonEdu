@@ -16,6 +16,7 @@ import { createVisionPipeline } from '@/lib/vision';
 import { nowMs } from '@/lib/time';
 import type {
   CameraStatus,
+  ClientTransitionReason,
   CreateMonitoringController,
   EngineConfig,
   EngineTransition,
@@ -95,6 +96,8 @@ class MonitoringControllerImpl implements MonitoringController {
   private cadence: AdaptiveCadence;
   /** Ticks with no new video frame + results discarded because the run was torn down meanwhile. */
   private framesDropped = 0;
+  /** v1.2 MonitoringSnapshot.lastReason: reason of the most recent emitted transition. */
+  private lastReason: ClientTransitionReason | null = null;
   private disposed = false;
   private frameTracker: VideoFrameTracker | null = null;
   /** Ticks where the video had no new frame (not inferred; lets the stall rule fire). Internal. */
@@ -125,6 +128,7 @@ class MonitoringControllerImpl implements MonitoringController {
       paused: false,
       perf: { ...this.perf },
       error: null,
+      lastReason: null,
     };
   }
 
@@ -461,6 +465,7 @@ class MonitoringControllerImpl implements MonitoringController {
 
   private emit(t: EngineTransition | null) {
     if (!t) return;
+    this.lastReason = t.reason;
     for (const l of [...this.transitionListeners]) {
       try {
         l(t);
@@ -478,6 +483,7 @@ class MonitoringControllerImpl implements MonitoringController {
       ...patch,
       engineState: this.sm.state,
       stateSince: this.sm.stateSince,
+      lastReason: this.lastReason,
       perf: { ...this.perf },
     };
     this.scheduleNotify();

@@ -343,6 +343,23 @@ describe('MonitoringController', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('v1.2 lastReason: null before the first transition, then the most recent reason', async () => {
+    const { ctrl, videoEl, track } = setup();
+    expect(ctrl.getSnapshot().lastReason).toBeNull();
+    await ctrl.start(videoEl);
+    expect(ctrl.getSnapshot().lastReason).toBeNull();
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(ctrl.getSnapshot().lastReason).toBe('SEATED_CONFIRMED');
+    ctrl.startBreak();
+    expect(ctrl.getSnapshot().lastReason).toBe('BREAK_STARTED');
+    ctrl.endBreak();
+    expect(ctrl.getSnapshot().lastReason).toBe('BREAK_ENDED');
+    await vi.advanceTimersByTimeAsync(16_000);
+    track.fire('ended');
+    expect(ctrl.getSnapshot()).toMatchObject({ engineState: 'UNKNOWN', lastReason: 'CAMERA_STOPPED' });
+    ctrl.dispose();
+  });
+
   describe('adaptive cadence (contract v1.2 perf fields)', () => {
     it('cheap inference: configured cadence, perf fields populated, not low-power', async () => {
       const { ctrl, videoEl } = setup();
