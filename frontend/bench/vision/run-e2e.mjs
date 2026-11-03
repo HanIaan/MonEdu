@@ -2,7 +2,7 @@
 /**
  * Runs harness/e2e.ts (real MonitoringController, real models on the main thread) in headless Chromium.
  * Usage: node run-e2e.mjs --scenes "/commons/a.jpg@0,/commons/b.jpg@40000" --duration 80000
- *        [--camera 640x480] [--out name]
+ *        [--camera 640x480] [--cpu-throttle 6] [--out name]
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -30,6 +30,12 @@ const chromium = await loadChromium();
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
+  // Optional low-end emulation: CDP CPU throttling of the renderer main thread (pipeline runs there).
+  const throttle = Number(arg('--cpu-throttle', 1));
+  if (throttle > 1) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+  }
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && !m.text().includes('XNNPACK') && console.error('[page]', m.text()));
   await page.goto(`http://127.0.0.1:${port}/e2e.html`);
   await page.waitForFunction(() => typeof window.runE2E === 'function');

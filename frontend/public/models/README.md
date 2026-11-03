@@ -48,8 +48,10 @@ Verify: `cd frontend/public/models && shasum -a 256 *.tflite *.task`
   <https://github.com/google/automl/tree/master/efficientdet>, whose `LICENSE` is **Apache License 2.0**
   (checked 2026-11-03). Treat "Apache-2.0 via upstream" as the best available information, not as an
   explicit statement for this exact file.
-- Can: 80 COCO classes, 320×320 input. We restrict it with `categoryAllowlist: ['cell phone']`,
-  `scoreThreshold: 0.2`, `maxResults: 3`, and keep only the best `cell phone` score.
+- Can: 80 COCO classes, 320×320 input. We restrict it with `categoryAllowlist: ['cell phone', 'person']`,
+  `scoreThreshold: 0.2`, `maxResults: 10`, and keep only the best `cell phone` score and (contract v1.2)
+  the best `person` score, which the engine uses to reject non-human faces (pets) — see
+  `bench/vision/RESULTS.md` §B.
 - **Cannot:** it detects a phone-shaped *object* in view. It does **not** detect phone *use*,
   attention, or what is on the screen. A phone lying on the desk is a "phone"; a phone held below the
   desk is invisible. Small, partially occluded, dark-cased or edge-on phones are frequently missed
@@ -57,6 +59,38 @@ Verify: `cd frontend/public/models && shasum -a 256 *.tflite *.task`
   threshold flip with resolution (0.64 at 960 px vs 0.45 at 320 px for the same photo). Hence the
   engine only reports `DISTRACTION_SUSPECTED` after 20 s of continuous evidence with hysteresis, and
   the UI must present it as a *suspicion*.
+
+## Phase 2 comparison (P2-W1, 2026-11-03)
+
+Full method, test-set limits and every table: [`../../bench/vision/RESULTS.md`](../../bench/vision/RESULTS.md).
+Candidate object detectors were downloaded only into `bench/vision/.cache/` (not served, not committed):
+
+| Candidate | Source (MediaPipe model storage) | bytes | sha256 |
+|---|---|---|---|
+| EfficientDet-Lite0 float16 | `object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite` | 7 254 339 | `4b59100025bea1235a84c1038879a6cccc9f6c49f5e41144e91e74d99e780993` |
+| EfficientDet-Lite2 int8 | `object_detector/efficientdet_lite2/int8/1/efficientdet_lite2.tflite` | 7 515 971 | `b3f50554cb0ea559e90328845f7d9ba4d13c8bff372914d24e06bc8bb72fa896` |
+| SSD-MobileNetV2 float32 | `object_detector/ssd_mobilenet_v2/float32/1/ssd_mobilenet_v2.tflite` | 11 316 189 | `b8ccb1a25d45455ba52e85f26531948e1cb75efeb94c7c3d456d54fd4d6fbdd2` |
+| Face Landmarker (research, §C) | `face_landmarker/face_landmarker/float16/1/face_landmarker.task` | 3 758 596 | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
+
+(`efficientdet_lite1` and `ssd_mobilenet_v2` int8 are not published there: HTTP 404.)
+License: not re-verified for these files (EfficientDet: same situation as Lite0 above; Face Landmarker
+and SSD-MobileNetV2: not checked). None of them is served or shipped.
+
+COCO val2017 (90 phone / 150 no-phone images with people), `phoneMinScore` 0.5, headless Chromium on
+Apple Silicon, main thread:
+
+| Option | Precision | Recall | FP | detector mean / p95 ms | wasm heap |
+|---|---|---|---|---|---|
+| 320×240 · Lite0 int8 (v1) | 1.00 | 0.31 | 0 | 49.2 / 57.5 | 47.7 MB |
+| **640×480 · Lite0 int8 (chosen, needs camera CCR)** | 1.00 | 0.38 | 0 | 48.5 / 51.0 | 47.7 MB |
+| 640×480 · Lite0 float16 | 1.00 | 0.28 | 0 | 48.8 / 51.3 | 98.9 MB |
+| 640×480 · Lite2 int8 | 0.98 | 0.51 | 1 | 144.8 / 149.2 | 87.2 MB |
+| 640×480 · SSD-MobileNetV2 f32 | 1.00 | 0.19 | 0 | 35.3 / 37.3 | 68.6 MB |
+| 640×480 · ROI (upper body) Lite0 int8 | 0.95 | 0.42 | 2 | 48.2 / 50.0 | 47.7 MB |
+
+Face/pose/detector latency does not depend on the input resolution (each model resizes internally),
+so a split-resolution pipeline brings nothing. Wasm heap of the production stack: face 19.1 MB +
+pose 82.4 MB + Lite0 47.7 MB.
 
 ## Runtime notes (verified, see below)
 
