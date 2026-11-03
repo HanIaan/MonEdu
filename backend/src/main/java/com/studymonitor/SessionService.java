@@ -112,9 +112,10 @@ public class SessionService {
             MonitoringEvent e=event(s,State.UNKNOWN,Reason.CAMERA_STOPPED,now,now);
             change(s,store.open(s.id),e,now,now); s.verifiedUntil=max(s.verifiedUntil,now); announce(s,e,EventType.STATE_CHANGED);
         }
-        ActivityInterval interval=store.open(s.id);
+        // The interval reason is only needed for UNKNOWN; normal heartbeats update one row.
+        boolean timedOut=s.currentState==State.UNKNOWN && store.open(s.id).reason==Reason.HEARTBEAT_TIMEOUT;
         return new HeartbeatResponse(now,s.currentState,s.currentStateSince,s.lastSeq,
-            s.currentState==State.UNKNOWN && interval.reason==Reason.HEARTBEAT_TIMEOUT,config.heartbeatInterval().toSeconds());
+            timedOut,config.heartbeatInterval().toSeconds());
     }
     @Transactional
     public Session end(UUID student,UUID sessionId,EndRequest request) {

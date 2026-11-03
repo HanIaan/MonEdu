@@ -22,8 +22,19 @@ public class ReportService {
     public List<Overview> students(UUID teacher) {
         if(auth.me(teacher).role()!=Role.TEACHER) throw Problems.fail(org.springframework.http.HttpStatus.FORBIDDEN,"FORBIDDEN","Teacher access required");
         Instant now=clock.instant(); LocalDate date=now.atZone(SEOUL).toLocalDate();
-        return store.students(teacher).stream().map(account -> {
-            Report r=compute(account.id,date,now); StudySession active=store.active(account.id).orElse(null);
+        List<Account> accounts=store.students(teacher);
+        List<UUID> ids=accounts.stream().map(account -> account.id).toList();
+        List<StudySession> day=store.dayForStudents(ids,date);
+        Map<UUID,List<StudySession>> days=new HashMap<>();
+        day.forEach(s -> days.computeIfAbsent(s.studentId,key -> new ArrayList<>()).add(s));
+        Map<UUID,List<ActivityInterval>> intervals=new HashMap<>();
+        store.intervals(day.stream().map(s -> s.id).toList()).forEach(i ->
+            intervals.computeIfAbsent(i.studentId,key -> new ArrayList<>()).add(i));
+        Map<UUID,StudySession> activeSessions=new HashMap<>();
+        store.activeForStudents(ids).forEach(s -> activeSessions.put(s.studentId,s));
+        return accounts.stream().map(account -> {
+            Report r=compute(account,date,now,days.getOrDefault(account.id,List.of()),intervals.getOrDefault(account.id,List.of()));
+            StudySession active=activeSessions.get(account.id);
             return new Overview(account.view(),active==null?null:active.id,active==null?null:active.currentState,
                                 active==null?null:active.currentStateSince,active==null?null:active.lastHeartbeatAt,
                                 new Today(date,r.firstSeatedAt(),r.lateSeconds(),r.lateStatus(),r.totals(),r.currentStreakSeconds(),r.longestStreakSeconds()));
@@ -31,8 +42,10 @@ public class ReportService {
     }
     private Report compute(UUID student,LocalDate date,Instant now) {
         List<StudySession> sessions=store.day(student,date);
+        return compute(store.account(student),date,now,sessions,store.intervals(sessions.stream().map(s -> s.id).toList()));
+    }
+    private Report compute(Account account,LocalDate date,Instant now,List<StudySession> sessions,List<ActivityInterval> intervals) {
         Map<UUID,StudySession> byId=new HashMap<>(); sessions.forEach(s -> byId.put(s.id,s));
-        List<ActivityInterval> intervals=store.intervals(sessions.stream().map(s -> s.id).toList());
         EnumMap<State,Duration> totals=new EnumMap<>(State.class);
         for(State state:State.values()) totals.put(state,Duration.ZERO);
         Instant first=null,previousEnd=null; Duration streak=Duration.ZERO,longest=Duration.ZERO,current=Duration.ZERO;
@@ -57,7 +70,7 @@ public class ReportService {
         Instant reference=date.atTime(9,0).atZone(SEOUL).toInstant();
         Long late=first==null?null:Math.max(0,Duration.between(reference,first).getSeconds());
         StudySession active=sessions.stream().filter(s -> s.status==Status.ACTIVE).findFirst().orElse(null);
-        return new Report(student,store.account(student).displayName,date,"Asia/Seoul",reference,first,late,
+        return new Report(account.id,account.displayName,date,"Asia/Seoul",reference,first,late,
             first==null?LateStatus.NOT_SEATED:late==0?LateStatus.ON_TIME:LateStatus.LATE,
             new Totals(totals.get(State.FOCUS_ESTIMATED).toSeconds(),totals.get(State.DISTRACTION_SUSPECTED).toSeconds(),
                        totals.get(State.AWAY).toSeconds(),totals.get(State.UNKNOWN).toSeconds(),totals.get(State.BREAK).toSeconds()),
