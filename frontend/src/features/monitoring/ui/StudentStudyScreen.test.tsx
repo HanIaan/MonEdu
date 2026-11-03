@@ -19,12 +19,8 @@ const IDLE_MONITORING: MonitoringSnapshot = {
 };
 
 function makeSession(overrides: Partial<StudySessionApi> = {}, monitoring: Partial<MonitoringSnapshot> = {}) {
-  const start = vi.fn(async (...args: [HTMLVideoElement]) => {
-    void args;
-  });
-  const resumeMonitoring = vi.fn(async (...args: [HTMLVideoElement]) => {
-    void args;
-  });
+  const start = vi.fn(async () => {});
+  const resumeMonitoring = vi.fn(async () => {});
   const pauseMonitoring = vi.fn();
   const startBreak = vi.fn();
   const endBreak = vi.fn();
@@ -35,6 +31,7 @@ function makeSession(overrides: Partial<StudySessionApi> = {}, monitoring: Parti
     session: null,
     monitoring: { ...IDLE_MONITORING, ...monitoring },
     sync: { online: true, pendingEvents: 0, lastHeartbeatAt: null, lastError: null },
+    cameraStream: null,
     start,
     pauseMonitoring,
     resumeMonitoring,
@@ -63,7 +60,7 @@ function renderScreen(session: StudySessionApi) {
 }
 
 describe('StudentStudyScreen', () => {
-  it('requires privacy consent before starting, then calls start(videoEl)', () => {
+  it('requires privacy consent before starting, then calls start() with no video argument', () => {
     const { session, start } = makeSession();
     renderScreen(session);
 
@@ -77,18 +74,44 @@ describe('StudentStudyScreen', () => {
     fireEvent.click(startButton);
 
     expect(start).toHaveBeenCalledTimes(1);
-    const video = start.mock.calls[0]![0];
-    expect(video).toBeInstanceOf(HTMLVideoElement);
+    expect(start.mock.calls[0]).toEqual([]);
   });
 
-  it('always shows camera and model status with data-status', () => {
+  it('shows the monitoring card with camera, model and analysis-rate status', () => {
     const { session } = makeSession();
     renderScreen(session);
+    expect(screen.getByTestId('monitoring-card')).toBeInTheDocument();
     expect(screen.getByTestId('camera-status')).toHaveAttribute('data-status', 'idle');
     expect(screen.getByTestId('camera-status')).toHaveTextContent('대기 중');
     expect(screen.getByTestId('model-status')).toHaveAttribute('data-status', 'idle');
+    expect(screen.getByTestId('analysis-fps')).toHaveAttribute('data-fps', '0.0');
     expect(screen.getByTestId('current-state')).toHaveAttribute('data-state', 'FOCUS_ESTIMATED');
     expect(screen.getByTestId('sync-status')).toHaveAttribute('data-pending', '0');
+  });
+
+  it('shows the day timeline from the report', () => {
+    const { session } = makeSession();
+    renderScreen(session);
+    expect(screen.getByTestId('timeline')).toBeInTheDocument();
+    expect(screen.getAllByTestId('timeline-segment')).toHaveLength(3);
+  });
+
+  it('toggles the preview without mounting it by default and without calling session methods', () => {
+    const { session, start, pauseMonitoring, resumeMonitoring, startBreak, endBreak, end } = makeSession();
+    renderScreen(session);
+
+    expect(screen.queryByTestId('camera-preview')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('preview-toggle'));
+    expect(screen.getByTestId('camera-preview')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('preview-toggle'));
+    expect(screen.queryByTestId('camera-preview')).not.toBeInTheDocument();
+
+    expect(start).not.toHaveBeenCalled();
+    expect(pauseMonitoring).not.toHaveBeenCalled();
+    expect(resumeMonitoring).not.toHaveBeenCalled();
+    expect(startBreak).not.toHaveBeenCalled();
+    expect(endBreak).not.toHaveBeenCalled();
+    expect(end).not.toHaveBeenCalled();
   });
 
   it('drives break, pause and end through the session API', () => {
@@ -110,7 +133,7 @@ describe('StudentStudyScreen', () => {
     expect(end).toHaveBeenCalledTimes(1);
   });
 
-  it('resumes monitoring through the API', () => {
+  it('resumes monitoring with no video argument', () => {
     const { session, resumeMonitoring } = makeSession(
       { status: 'active' },
       { cameraStatus: 'stopped', modelStatus: 'ready', engineState: 'UNKNOWN', paused: true },
@@ -119,6 +142,6 @@ describe('StudentStudyScreen', () => {
 
     fireEvent.click(screen.getByTestId('resume-monitoring'));
     expect(resumeMonitoring).toHaveBeenCalledTimes(1);
-    expect(resumeMonitoring.mock.calls[0]![0]).toBeInstanceOf(HTMLVideoElement);
+    expect(resumeMonitoring.mock.calls[0]).toEqual([]);
   });
 });

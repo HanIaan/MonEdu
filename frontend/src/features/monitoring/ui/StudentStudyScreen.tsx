@@ -1,10 +1,11 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ApiError, StudyDayReport } from '@/lib/api';
 import type { StudySessionApi } from '@/features/monitoring/contracts';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { EmptyState, CardSkeletonGrid } from '@/components/Skeleton';
-import { CameraPanel } from './CameraPanel';
+import { Timeline } from '@/components/Timeline';
+import { MonitoringCard } from './MonitoringCard';
 import { SessionControls } from './SessionControls';
 import { LiveStats, deriveLiveValues, useNowMs } from './LiveStats';
 
@@ -26,8 +27,9 @@ function actionMessage(err: unknown): string {
 }
 
 /**
- * Presentational student screen. Takes the session API and report via props so it can be tested
- * with a fake `StudySessionApi`; the real hook lives at the page level (`StudentScreen`).
+ * Student study screen centred on the day's focus stats and timeline.
+ * The camera is only a small status card (with an opt-in preview); the session layer owns the
+ * analysis video, so this component calls `start()`/`resumeMonitoring()` with no video argument.
  */
 export function StudentStudyScreen({
   session,
@@ -38,21 +40,11 @@ export function StudentStudyScreen({
   onRefreshReport,
   tickMs = 1000,
 }: StudentStudyScreenProps) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const busy = session.status === 'starting' || session.status === 'ending';
   const now = useNowMs(tickMs, Boolean(report));
   const liveValues = report ? deriveLiveValues(report, fetchedAt, now) : null;
-
-  const requireVideo = (): HTMLVideoElement | null => {
-    const video = videoRef.current;
-    if (!video) {
-      setActionError('카메라 미리보기를 준비하지 못했습니다. 페이지를 새로고침해 주세요.');
-      return null;
-    }
-    return video;
-  };
 
   const handleStart = () => {
     setActionError(null);
@@ -79,16 +71,25 @@ export function StudentStudyScreen({
         />
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-        <CameraPanel
-          videoRef={videoRef}
-          cameraStatus={session.monitoring.cameraStatus}
-          modelStatus={session.monitoring.modelStatus}
-          engineState={session.monitoring.engineState}
-          cameraError={session.monitoring.error}
-        />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+        <aside className="space-y-4 lg:col-start-2 lg:row-start-1" aria-label="모니터링 및 세션 제어">
+          <MonitoringCard
+            cameraStatus={session.monitoring.cameraStatus}
+            modelStatus={session.monitoring.modelStatus}
+            engineState={session.monitoring.engineState}
+            lastObservation={session.monitoring.lastObservation}
+            framesProcessed={session.monitoring.perf.framesProcessed}
+            paused={session.monitoring.paused}
+            sessionStatus={session.status}
+            cameraStream={session.cameraStream}
+            cameraError={session.monitoring.error}
+            onPause={() => {
+              setActionError(null);
+              session.pauseMonitoring();
+            }}
+            onResume={handleResume}
+          />
 
-        <div className="space-y-4">
           <SessionControls
             status={session.status}
             monitoring={session.monitoring}
@@ -103,11 +104,6 @@ export function StudentStudyScreen({
               setActionError(null);
               session.endBreak();
             }}
-            onPause={() => {
-              setActionError(null);
-              session.pauseMonitoring();
-            }}
-            onResume={handleResume}
             onEnd={handleEnd}
             busy={busy}
             error={actionError}
@@ -121,31 +117,48 @@ export function StudentStudyScreen({
               <li>학습을 마치면 ‘학습 종료’를 눌러 세션을 정리해 주세요.</li>
             </ul>
           </div>
+        </aside>
+
+        <div className="space-y-6 lg:col-start-1 lg:row-start-1">
+          {reportError ? (
+            <ErrorBanner
+              title={reportError.code === 'NETWORK_ERROR' ? '현황을 불러오지 못했습니다' : '학습 현황을 불러오지 못했습니다'}
+              message={
+                reportError.code === 'NETWORK_ERROR'
+                  ? '서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.'
+                  : reportError.message
+              }
+              onRetry={onRefreshReport}
+            />
+          ) : null}
+
+          {reportLoading && !report ? <CardSkeletonGrid count={8} /> : null}
+
+          {!reportLoading && !report && !reportError ? (
+            <EmptyState
+              title="오늘의 학습 기록이 없습니다"
+              description="학습을 시작하면 이곳에 상태별 누적 시간과 연속 집중 기록이 표시됩니다."
+            />
+          ) : null}
+
+          {report && liveValues ? <LiveStats values={liveValues} sync={session.sync} /> : null}
+
+          {report ? (
+            <section
+              aria-labelledby="student-timeline-title"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+            >
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 id="student-timeline-title" className="text-sm font-semibold text-slate-900">
+                  오늘의 활동 타임라인
+                </h2>
+                <p className="text-xs text-slate-500">구간에 마우스를 올리거나 포커스하면 상세가 표시됩니다.</p>
+              </div>
+              <Timeline intervals={report.intervals} computedAt={report.computedAt} />
+            </section>
+          ) : null}
         </div>
       </div>
-
-      {reportError ? (
-        <ErrorBanner
-          title={reportError.code === 'NETWORK_ERROR' ? '현황을 불러오지 못했습니다' : '학습 현황을 불러오지 못했습니다'}
-          message={
-            reportError.code === 'NETWORK_ERROR'
-              ? '서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.'
-              : reportError.message
-          }
-          onRetry={onRefreshReport}
-        />
-      ) : null}
-
-      {reportLoading && !report ? <CardSkeletonGrid count={8} /> : null}
-
-      {!reportLoading && !report && !reportError ? (
-        <EmptyState
-          title="오늘의 학습 기록이 없습니다"
-          description="학습을 시작하면 이곳에 상태별 누적 시간과 연속 집중 기록이 표시됩니다."
-        />
-      ) : null}
-
-      {report && liveValues ? <LiveStats values={liveValues} sync={session.sync} /> : null}
     </div>
   );
 }
