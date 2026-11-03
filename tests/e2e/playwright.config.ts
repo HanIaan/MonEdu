@@ -24,13 +24,13 @@ export default defineConfig({
   projects: [
     { name: 'api', testMatch: /api\..*\.spec\.ts/, use: { baseURL: API } },
     { name: 'ui', testMatch: /ui\..*\.spec\.ts/, use: camera() },
-    { name: 'camera-person', testMatch: /camera-person\..*\.spec\.ts/, use: camera() },
+    { name: 'camera-person', testMatch: /camera-person\.(monitoring|pipeline|soak)\.spec\.ts/, use: camera() },
     { name: 'camera-nobody', testMatch: /camera-nobody\..*\.spec\.ts/, use: camera() },
     {
       // WebKit engine (≈ Safari, but NOT Safari: no Safari power/autoplay policies). Canvas camera only.
       name: 'webkit-person',
-      testMatch: /camera-person\.monitoring\.spec\.ts/,
-      grep: /teacher sees it live|nobody in frame/,
+      testMatch: /camera-person\.(monitoring|pipeline)\.spec\.ts/,
+      grep: /teacher sees it live|nobody in frame|frozen camera|pauses the hidden/,
       use: { ...devices['Desktop Safari'] },
     },
     {

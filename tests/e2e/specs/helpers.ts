@@ -51,6 +51,7 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
     ({ person, nobody, initial }) => {
       const images: Record<string, HTMLImageElement> = {};
       let scene: string = initial;
+      let frozen = false;
       let tracks: MediaStreamTrack[] = [];
       const load = (k: string, src: string) => {
         const i = new Image();
@@ -62,6 +63,10 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
       (window as unknown as Record<string, unknown>).__fakeCam = {
         setScene: (s: string) => {
           scene = s;
+        },
+        /** Stop producing new frames while the track stays 'live' (simulates a stalled source). */
+        freeze: (f: boolean) => {
+          frozen = f;
         },
         stopTrack: () => {
           for (const t of tracks) {
@@ -89,10 +94,19 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
           ctx.fillStyle = `rgb(${Date.now() % 255},0,0)`;
           ctx.fillRect(0, 0, 1, 1);
         };
-        draw();
-        setInterval(draw, 66);
-        const stream = canvas.captureStream(15);
+        let track: (MediaStreamTrack & { requestFrame?: () => void }) | undefined;
+        const tick = () => {
+          if (frozen) return;
+          draw();
+          track?.requestFrame?.();
+        };
+        setInterval(tick, 66);
+        // captureStream(0) + requestFrame(): a frame is emitted ONLY when draw() runs, so freeze()
+        // really stops frame delivery (captureStream(15) would keep emitting identical frames).
+        const stream = canvas.captureStream(0);
         tracks = stream.getVideoTracks();
+        track = tracks[0] as typeof track;
+        tick();
         return stream;
       };
     },
