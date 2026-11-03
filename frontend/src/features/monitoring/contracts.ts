@@ -4,6 +4,8 @@
  *   C0  features/monitoring/session               (implements StudySessionApi via useStudySession)
  *   W3  features/monitoring/ui, app/, dashboard   (consumes StudySessionApi / MonitoringSnapshot)
  * Semantics: docs/contracts/state-machine.md. Do not edit — file a CONTRACT_CHANGE_REQUEST.
+ * v1.2 (Phase 2): optional FrameObservation.person*, MonitoringPerf adaptive-cadence fields. All optional:
+ * producers (W1) SHOULD populate them, consumers (W3) MUST handle `undefined`.
  */
 import type { components } from '@/lib/api/schema';
 
@@ -108,6 +110,13 @@ export interface FrameObservation {
   error?: string;
   /** Wall time spent in inference for this tick (ms), for perf telemetry. */
   inferenceMs: number;
+  /**
+   * v1.2 (optional): COCO "person" evidence from the object detector, used to reject non-human faces
+   * (pets). Only meaningful when `phoneEvaluated` (the detector ran this tick).
+   */
+  personDetected?: boolean;
+  /** v1.2 (optional): best COCO "person" score, 0..1. */
+  personScore?: number;
 }
 
 export type InferenceBackend = 'WORKER' | 'MAIN_THREAD';
@@ -171,6 +180,16 @@ export interface MonitoringPerf {
   avgInferenceMs: number;
   /** performance.memory.usedJSHeapSize where available (Chrome), else null. */
   jsHeapBytes: number | null;
+  /** v1.2 (optional): p95 of the last ≤100 inference times (ms). */
+  p95InferenceMs?: number;
+  /** v1.2 (optional): face+pose cadence currently in effect (ms) after load adaptation. */
+  effectiveIntervalMs?: number;
+  /** v1.2 (optional): object-detector cadence currently in effect (ms). */
+  effectivePhoneIntervalMs?: number;
+  /** v1.2 (optional): true while the adaptive scheduler has slowed cadence because inference is slow. */
+  lowPower?: boolean;
+  /** v1.2 (optional): frames not analysed because no new frame arrived (stale) or a newer frame superseded them. */
+  framesDropped?: number;
 }
 
 export interface MonitoringSnapshot {

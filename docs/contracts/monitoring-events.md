@@ -26,6 +26,17 @@ The engine only analyses **new** frames (`requestVideoFrameCallback` is authorit
 `currentTime` is a wall clock for MediaStream sources and only a fallback), so frozen frames or a
 browser-paused video become `UNKNOWN (INFERENCE_STALLED)` within `staleFrameMs` instead of accruing focus.
 
+## 1b. Phase 2 additions (contract v1.2)
+
+All additions are **optional** fields in `contracts.ts` (no wire/API change; `openapi.yaml` unchanged):
+- `FrameObservation.personDetected?` / `personScore?` — COCO `person` from the object detector, for
+  rejecting non-human faces (pets). Presence-rule changes based on it require a `state-machine.md`
+  update (W1 files a CONTRACT_CHANGE_REQUEST with measurements; C0 applies it).
+- `MonitoringPerf.p95InferenceMs?`, `effectiveIntervalMs?`, `effectivePhoneIntervalMs?`, `lowPower?`,
+  `framesDropped?` — adaptive-cadence telemetry produced by the engine (W1), displayed by the UI (W3).
+Producers SHOULD populate them; consumers MUST treat `undefined` as "not reported".
+Nothing in these fields leaves the browser.
+
 ## 2. Client obligations
 
 1. `eventId` = `crypto.randomUUID()` generated once per transition and reused on every retry.
