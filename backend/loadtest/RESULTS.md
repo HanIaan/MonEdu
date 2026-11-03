@@ -2,7 +2,7 @@
 
 Run date: 2026-11-03. Baseline: integration `d9951a7`; candidate: heartbeat query removal, batched teacher overview, V2 interval index, and SSE disconnect/fan-out fixes. No API/schema wire changes. All numbers below are measured on this machine; none is an extrapolation.
 
-**Open contract issue:** heartbeat-first recovery followed by an old queued focus event can credit offline time. This accounting change is stopped pending C0 clarification; see [CONTRACT_CHANGE_REQUEST.md](CONTRACT_CHANGE_REQUEST.md). All 61 automated tests pass; that does not resolve this contradiction.
+**Resolved in P2-W2b (verified 2026-11-04 Asia/Seoul):** C0 approved timeout recovery in `d7cacc8`; leaving UNKNOWN opened by HEARTBEAT_TIMEOUT now takes effect at server receipt. Offline focus credit improved from **90 seconds to 0 seconds**. All **71 tests** pass, retaining the previous 61 and adding four recovery plus six database-upgrade cases; see [CONTRACT_CHANGE_REQUEST.md](CONTRACT_CHANGE_REQUEST.md). The load numbers below are the historical P2-W2 measurements, not a rerun of load scenarios after this follow-up.
 
 ## Workload and environment
 
@@ -300,17 +300,45 @@ ROLLBACK
 
 ## Security and contract checks
 
-- `./gradlew test --rerun-tasks`: **61 tests, 0 failures, 0 errors, 0 skipped**; original 36 retained, 25 additions. Testcontainers uses its own random port, not the coordinator DB.
+- P2-W2 baseline: 61 passing tests (original 36 plus 25 additions). P2-W2b `./gradlew test`: **71 tests, 0 failures, 0 errors, 0 skipped**; all 61 retained plus four recovery regressions using the injected Clock and six migration/boot cases. Testcontainers uses its own random port, not the coordinator DB.
 - JWT modified payload with original signature, expired beyond allowed 60-second clock skew, `alg=none`, wrong issuer, missing expiry, future not-before all return 401.
 - Students cannot use teacher routes; teachers cannot start or mutate student sessions; cross-student mutations/read and unassigned-teacher reads return 403. Both stream role checks are exercised.
 - Invalid enum, missing state, seq=0, invalid confidence/score, uncontracted media, server-only reason are rejected without writes. Existing validation/privacy assertions remain.
 - Future detectedAt >5 seconds rejected; far-past/pre-session detectedAt clamps to current interval/session start. Original exact duplicate HTTP concurrency, new concurrent distinct-event/same-seq collision, sequence gaps/order and cross-session event ID tests pass.
 - Camera stop prevents further focus; after the explicit 45-second live grace, silent focus reports cap at verifiedUntil, and timeout closes there. The report may temporarily display up to 45 seconds beyond verifiedUntil while the client is considered live; this is explicitly required by state-machine §5.
-- `V1__init.sql`, OpenAPI and all other contracts unchanged; 12 operationIds remain. No endpoint or request/response field was added.
+- `V1__init.sql` and wire shapes remain unchanged; 12 operationIds remain. P2-W2b merged the contract prose approved by C0 from `d7cacc8` via integration `8125abc`; W2 made no contract edits. No endpoint or request/response field was added.
 
-## Unresolved accounting rule
+## Recovery accounting — resolved in P2-W2b
 
-The real post-restart probe measured **0 seconds** of extra focus with event-first ordering. A separate fixture seeded a timed-out UNKNOWN session with 30 seconds of closed focus; a **fresh heartbeat followed by an old queued focus event** then measured **90 extra focus seconds** (30 → 120). The heartbeat advances verification, then the event clamps to the UNKNOWN interval's old start (verifiedUntil). This follows the explicit max(detectedAt,currentInterval.startedAt) formula but conflicts with the prose that offline time stays UNKNOWN. Changing recovery accounting requires C0 to clarify state-machine §4; this part was not silently changed. Proposed rule: after HEARTBEAT_TIMEOUT, an event whose detectedAt precedes server receipt must preserve the timeout UNKNOWN gap and restore measurable state only at receipt (or use another explicit approved recovery boundary). No new wire field is needed.
+C0 approved the recovery exception in `d7cacc8`; W2 merged integration `8125abc` before implementing it. After timeout detection and validation, an accepted state-changing transition out of UNKNOWN opened by HEARTBEAT_TIMEOUT now uses `effectiveAt = serverNow`, regardless of client reason or detectedAt. Other intervals keep the ordinary clamp. Duplicate replay still returns the stored response before any timeout/boundary calculation.
+
+| Case | Before P2-W2b | After P2-W2b |
+|---|---|---|
+| Heartbeat first, then old queued focus event | +90 s offline focus in the real isolated fixture (30 → 120 focus s) | +0 s offline focus; 30 focus s and 90 UNKNOWN s in the injected-Clock regression |
+| Old event first, then heartbeat | +0 s in the real restart probe, but the event used the old boundary | +0 s; event effectiveAt is server receipt, including when inline timeout detection runs before the scanner |
+| UNKNOWN from session start or CAMERA_STOPPED | Ordinary clamp | Preserved: before-session onset clamps to start; later onset can still backdate within a non-timeout UNKNOWN interval |
+| Recovery event replay after a later state change | Stored response replay | Identical stored boundary/response except duplicate=true; no event/interval/session mutation |
+
+The new outage fixtures use 90 seconds plus one microsecond to cross the strict timeout threshold while reporting exactly 90 whole UNKNOWN seconds. The queued onset is inside the outage. Both orderings retain the 30 previously verified focus seconds and add zero focus for the outage; the heartbeat-first case then accrues only ten newly verified focus seconds. A non-RECONNECTED client reason is also tested to prevent bypassing the recovery boundary.
+
+Before implementation, the targeted four-test run reported `4 tests completed, 3 failed`: both recovery boundaries and the duplicate-boundary assertion reproduced the old behavior, while ordinary UNKNOWN clamping passed. After the recovery implementation the suite passed 65/65; with the six migration cases included, the final full suite passes 71/71. Historical raw load/probe data remains untouched; no load-scenario or CPU/heap improvement is attributed to this accounting-only follow-up.
+
+## Existing demo database upgrade — resolved in P2-W2b
+
+Decision: enable `spring.flyway.out-of-order: true` by default in backend application.yml. The seed migration is intentionally V1000, so an existing seeded database can have a higher applied version than the new schema migration V2. Without out-of-order migration, current startup validation rejects pending V2; the legacy-database regression reproduced `Detected resolved migration not applied to database: 2` before the fix.
+
+With this default, Flyway validates and applies the pending V2 index once even when V1000 is already in history. A database where C0 already applied V2 out of order validates without applying it again. This keeps the required `V2__interval_session_index.sql` filename, its SQL, V1 and V1000 checksums unchanged. No repair, clean, baseline, history rewrite, ignored-pending validation, manual flag or data deletion is used by application startup. Normal Flyway validation stays enabled.
+
+| Testcontainers boot case | Expected successful migration history (installation order) | Data check |
+|---|---|---|
+| Existing V1 + V1000; seed enabled | 1, 1000, 2 | Existing accounts, assignments, modified display name, session and interval rows unchanged |
+| Existing V1 + V1000; seed disabled | 1, 1000, 2 | Same existing data preserved; no seed rerun |
+| V2 already applied out of order after V1000 | 1, 1000, 2 | Startup validates; no second application; existing data unchanged |
+| Fresh demo database | 1, 2, 1000 | Five demo accounts and three assignments |
+| Fresh seedless database | 1, 2 | Zero demo accounts |
+| Existing seedless V1 database | 1, 2 | Upgrade succeeds with zero demo accounts |
+
+`MigrationUpgradeTests` copies the actual V1/V1000 migration bytes into an isolated legacy fixture location, migrates that schema first, then boots the current application bean graph with its real configuration and migrations. The servlet context is mocked, so no HTTP service port is opened. It excludes other test configurations and verifies the application JDBC URL points at the prepared Testcontainers database, preventing a shared ServiceConnection fixture from silently substituting a fresh DB. Existing-row snapshots are compared before and after boot. The default also allows later low-numbered schema migrations to reach already-seeded demo databases; all applied migration checksums remain immutable.
 
 ## Reproduction and limitations
 

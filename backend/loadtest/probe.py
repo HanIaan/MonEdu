@@ -104,13 +104,13 @@ try:
         closed=sql("select a.ended_at=s.verified_until from activity_intervals a join study_sessions s on s.id=a.session_id where a.session_id='"+session+"' and a.state='FOCUS_ESTIMATED' order by a.started_at desc limit 1").strip()
         assert closed=='t',closed
         output['abruptRestart']='PASS: SIGKILL, 92 seconds offline, persisted ACTIVE session becomes UNKNOWN at exact verifiedUntil; focus interval closed there'
-        # Audit the literal contract clamp after timeout, without changing the accounting rule.
+        # Verify event-first recovery under the C0-approved timeout boundary.
         date=recovered['studyDate']; before=request('/api/v1/me/study-days/'+date)['totals']['focusSeconds']
         request(path+'/transitions',dict(eventId=str(uuid.uuid4()),seq=4,state='FOCUS_ESTIMATED',reason='RECONNECTED',detectedAt=recovered['startedAt']))
         request(path+'/heartbeat',dict(sentAt=stamp(),clientState='FOCUS_ESTIMATED',cameraActive=True,pageVisible=True,lastSeq=4))
         after=request('/api/v1/me/study-days/'+date)['totals']['focusSeconds']
         output['queuedRecoveryGapSeconds']=after-before
-        output['queuedRecoveryNote']='Literal max(detectedAt,currentInterval.startedAt) clamp permits a queued old focus event followed by heartbeat to credit an offline gap; contract clarification required to change that rule.'
+        output['queuedRecoveryNote']='Event-first recovery audit under the approved server-receipt boundary; heartbeat-first zero-credit regression is in memory_probe.py and the injected-Clock tests.'
     (RAW/(label+'-probe.json')).write_text(json.dumps(output,indent=2))
     print(label+' probes PASS',flush=True)
 finally:

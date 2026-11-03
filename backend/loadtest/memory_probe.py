@@ -45,6 +45,7 @@ try:
     request(path+'/heartbeat',dict(sentAt=s['startedAt'],clientState='FOCUS_ESTIMATED',cameraActive=True,pageVisible=True,lastSeq=0))
     transition=request(path+'/transitions',dict(eventId=str(uuid.uuid4()),seq=1,state='FOCUS_ESTIMATED',reason='RECONNECTED',detectedAt=s['startedAt']))
     after=request(report)['totals']['focusSeconds']
+    assert after-before==0,'Timeout recovery credited offline focus'
     output['heartbeatThenQueuedEvent']={'beforeFocusSeconds':before,'afterFocusSeconds':after,'extraFocusSeconds':after-before,'effectiveAt':transition['effectiveAt'],'oldVerifiedUntil':s['verifiedUntil']}
     (RAW/'memory-probe.json').write_text(json.dumps(output,indent=2));print('Fresh isolated recovery fixture extra focus seconds:',after-before,flush=True)
     output['baselineEmitterCount']=count(hist());assert output['baselineEmitterCount']==0
