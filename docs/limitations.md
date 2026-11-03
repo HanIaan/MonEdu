@@ -97,6 +97,12 @@ stop heartbeats immediately (they continued ~1.5 min). Chrome restricts freezing
 media, which is consistent with "background execution is not guaranteed either way": the design relies on
 heartbeat timeout + frame-freshness stall detection, not on assumptions about tab lifecycle.
 
+### Soak (5 min, Chromium headless, preview hidden, canvas camera, real models)
+JS heap 12.6 → 13.0 MB (samples every 30 s, max 13.4 MB, no upward trend); JS event listeners 665
+constant. Main-thread CPU ≈ 15.8 % of one core (CDP `TaskDuration`). **Worker-thread inference CPU is not
+included** in that figure, and headless timings on an Apple Silicon desktop do not represent low-end
+laptops. A multi-hour soak and real-webcam CPU profiling were not run.
+
 ### Test-harness pitfalls found (not app defects)
 - Chrome Headless Shell rejects `--use-file-for-fake-video-capture` (NotFoundError).
 - Playwright WebKit with a granted `camera` permission serves its own dark mock device unless
