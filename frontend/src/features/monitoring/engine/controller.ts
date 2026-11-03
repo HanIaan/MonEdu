@@ -22,6 +22,7 @@ import type {
   StateMachine,
   VisionPipeline,
 } from '../contracts';
+import { VideoFrameTracker } from './frameFreshness';
 import { createStateMachine, mergeConfig } from './stateMachine';
 
 type TimerId = ReturnType<typeof setTimeout>;
@@ -85,6 +86,11 @@ class MonitoringControllerImpl implements MonitoringController {
   private consecutiveFailures = 0;
   private perf: MonitoringPerf = { framesProcessed: 0, framesSkipped: 0, avgInferenceMs: 0, jsHeapBytes: null };
   private disposed = false;
+  private frameTracker: VideoFrameTracker | null = null;
+  /** Ticks where the video had no new frame (not inferred; lets the stall rule fire). Internal. */
+  private staleFrameTicks = 0;
+  /** play() attempts on an unexpectedly paused video with a live track. Internal diagnostics. */
+  private playAttempts = 0;
 
   constructor(config: Partial<EngineConfig> | undefined, deps: ControllerDeps) {
     this.cfg = mergeConfig(config);
@@ -158,6 +164,7 @@ class MonitoringControllerImpl implements MonitoringController {
       // Autoplay rejection or test env; frames are checked via readyState before every inference.
     }
     if (gen !== this.generation) throw new Error('monitoring stopped during start');
+    this.frameTracker = new VideoFrameTracker(video);
     this.update({ cameraStatus: 'active' });
 
     this.update({ modelStatus: 'loading' });
@@ -245,6 +252,7 @@ class MonitoringControllerImpl implements MonitoringController {
       this.perf.framesSkipped++;
       this.update({});
     } else {
+      this.ensurePlaying();
       void this.runInference(gen, now);
     }
     this.scheduleLoop(gen, this.cfg.inferenceIntervalMs);
@@ -255,6 +263,11 @@ class MonitoringControllerImpl implements MonitoringController {
     const pipeline = this.pipeline;
     if (!video || !pipeline) return;
     if (typeof video.readyState === 'number' && video.readyState < 2) return; // HAVE_CURRENT_DATA
+    // Never re-analyse a stale frame: no observation → staleFrameMs → INFERENCE_STALLED.
+    if (this.frameTracker && !this.frameTracker.consumeNewFrame()) {
+      this.staleFrameTicks++;
+      return;
+    }
     const runPhone = at - this.lastPhoneAt >= this.cfg.phoneIntervalMs;
     if (runPhone) this.lastPhoneAt = at;
     this.busy = true;
@@ -294,6 +307,20 @@ class MonitoringControllerImpl implements MonitoringController {
     this.perf.jsHeapBytes = (this.deps.memory ?? defaultMemory)();
     this.emit(this.sm.observe(obs));
     this.update({ lastFrameAt: obs.at, lastObservation: obs });
+  }
+
+  /** A hidden/offscreen video may get paused by the browser while the camera is live: resume it (cheap, never throws). */
+  private ensurePlaying() {
+    const v = this.video;
+    if (!v || v.paused !== true) return;
+    if (!this.stream?.getVideoTracks().some((t) => t.readyState === 'live')) return;
+    this.playAttempts++;
+    try {
+      const p = v.play() as Promise<void> | undefined;
+      p?.catch?.(() => {});
+    } catch {
+      /* autoplay policy etc. — stall detection covers it */
+    }
   }
 
   // ───────────────────────── camera / page events ─────────────────────────
@@ -365,6 +392,8 @@ class MonitoringControllerImpl implements MonitoringController {
       }
     });
     this.stream = null;
+    this.frameTracker?.dispose();
+    this.frameTracker = null;
     if (this.video) {
       try {
         this.video.pause?.();
