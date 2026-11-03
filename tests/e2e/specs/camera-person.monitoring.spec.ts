@@ -51,6 +51,9 @@ test('@slow nobody in frame for 30 s → AWAY; then camera track stops → UNKNO
   await page.evaluate(() => (window as any).__fakeCam.stopTrack());
   await expect(page.getByTestId('camera-status')).not.toHaveAttribute('data-status', 'active');
   await expect(state(page)).toHaveAttribute('data-state', 'UNKNOWN');
+  // Phase 2: the card shows WHY it cannot measure (engine lastReason, or derived from camera status).
+  await expect(page.getByTestId('unknown-state')).toHaveAttribute('data-reason', 'CAMERA_STOPPED');
+  await expect(page.getByTestId('unknown-state-reason')).toContainText('카메라');
   await endStudy(page);
   await ctx.close();
 });
