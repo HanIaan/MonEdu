@@ -206,6 +206,8 @@ export interface MonitoringSnapshot {
   paused: boolean;
   perf: MonitoringPerf;
   error: string | null;
+  /** v1.2 (optional): reason of the engine's most recent transition (null before the first one). */
+  lastReason?: ClientTransitionReason | null;
 }
 
 /** Owns camera + vision + scheduler + state machine. Implemented by W1. */

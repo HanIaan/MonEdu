@@ -33,6 +33,8 @@ export default defineConfig({
       grep: /teacher sees it live|nobody in frame|frozen camera|pauses the hidden|preview hidden vs shown|first setup/,
       use: { ...devices['Desktop Safari'] },
     },
+    // Opt-in (SOAK_LONG=1): 30 min+ soak with its own browser server for process-level CPU sampling.
+    ...(process.env.SOAK_LONG === '1' ? [{ name: 'soak-long', testMatch: /soak\.long\.spec\.ts/ }] : []),
     {
       name: 'camera-denied',
       testMatch: /camera-denied\..*\.spec\.ts/,
