@@ -52,5 +52,44 @@ marked as such.
 - SSE fan-out is in-memory (single backend instance). Horizontal scaling needs a shared pub/sub.
 - No rate limiting, account management UI, password reset, or audit log UI.
 
-## Measurements
-_Filled in after Phase 3 validation._
+## Measurements (2026-11-03, Apple Silicon, Playwright 1.64.1)
+
+### Hidden analysis video — frame delivery (`tests/e2e/fixtures/video-visibility-probe.html`)
+Same MediaStream into 6 differently hidden `<video>` elements, 6 s, synthetic 15 fps source.
+
+| Variant | Chromium 156 (headless) | Playwright WebKit 27.2 (headless) |
+|---|---|---|
+| 2×2 px, opacity 0.01, fixed (**used**) | flowing (rVFC 92) | flowing (rVFC 95) |
+| `display:none` | flowing | flowing |
+| detached from DOM | flowing | flowing |
+| `visibility:hidden` | flowing | flowing |
+| offscreen `left:-9999px` | flowing | flowing |
+| visible 160×120 (control) | flowing | flowing |
+
+**Not verified on real Safari.app** (Playwright WebKit lacks Safari's power-saving/autoplay policies).
+Open the probe page in Safari (`python3 -m http.server 4800` in `tests/e2e/fixtures`, then
+`http://localhost:4800/video-visibility-probe.html` → "실제 카메라로 측정") to check a real device.
+Regardless of the result, the engine's freshness check turns a non-delivering video into `UNKNOWN`
+rather than counting focus (E2E `frozen camera frames → UNKNOWN`, passing in Chromium and WebKit).
+
+### Frozen-frame signals (measured)
+When a live MediaStream stops producing frames, `video.currentTime` keeps advancing (+3.0 s per 3 s)
+in both Chromium 156 and WebKit 27.2 while `requestVideoFrameCallback` fires 0 times — hence rVFC is
+the authoritative freshness signal.
+
+### Preview hidden vs shown (E2E, Chromium; same in WebKit)
+| Cycle | seated → FOCUS | empty → AWAY |
+|---|---|---|
+| warm-up | 15.8 s | 31.0 s |
+| preview hidden | 16.3 s | 32.1 s |
+| preview shown | 16.1 s | 31.1 s |
+| hidden again | 16.3 s | 30.9 s |
+One earlier run showed a 29.4 s first seating; not reproduced in later runs (cause unknown).
+
+### Test-harness pitfalls found (not app defects)
+- Chrome Headless Shell rejects `--use-file-for-fake-video-capture` (NotFoundError).
+- Playwright WebKit with a granted `camera` permission serves its own dark mock device unless
+  `getUserMedia` is overridden on `MediaDevices.prototype`.
+- `canvas.captureStream(15)` emits identical frames even when drawing stops; use
+  `captureStream(0)` + `requestFrame()` to simulate a frozen camera.
+

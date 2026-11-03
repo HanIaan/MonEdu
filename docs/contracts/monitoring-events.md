@@ -16,6 +16,16 @@ camera → lib/vision (W1, in-browser MediaPipe) → FrameObservation
 Nothing but `TransitionRequest` / `HeartbeatRequest` JSON leaves the browser. No frames, images,
 landmarks, boxes, or embeddings — ever.
 
+## 1a. Analysis video ownership (contract v1.1)
+
+The `<video>` that feeds MediaPipe is created and owned by the session layer
+(`features/monitoring/session/analysisVideo.ts`): one element, attached to `<body>`, 2×2 px,
+opacity 0.01, never `display:none`. UI previews only render `StudySessionApi.cameraStream` in their own
+`<video>`; mounting, hiding or unmounting a preview never touches the analysis pipeline.
+The engine only analyses **new** frames (`requestVideoFrameCallback` is authoritative once it has fired;
+`currentTime` is a wall clock for MediaStream sources and only a fallback), so frozen frames or a
+browser-paused video become `UNKNOWN (INFERENCE_STALLED)` within `staleFrameMs` instead of accruing focus.
+
 ## 2. Client obligations
 
 1. `eventId` = `crypto.randomUUID()` generated once per transition and reused on every retry.
