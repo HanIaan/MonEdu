@@ -89,11 +89,13 @@ public class SessionService {
         // Enforce elapsed silence here too: reconnect requests need not wait for the next scan.
         timeoutIfNeeded(s,now);
         ActivityInterval current=store.open(s.id);
-        Instant effective=clamp(detected,current.startedAt,now);
+        boolean changed=s.currentState!=request.state();
+        // Recovery cannot backdate presence into an outage, even if a heartbeat arrived first.
+        boolean timeoutRecovery=changed && current.state==State.UNKNOWN && current.reason==Reason.HEARTBEAT_TIMEOUT;
+        Instant effective=timeoutRecovery?now:clamp(detected,current.startedAt,now);
         MonitoringEvent e=event(s,request.state(),request.reason(),effective,now);
         e.source="CLIENT"; e.eventId=request.eventId(); e.seq=request.seq(); e.detectedAt=detected;
         e.confidence=request.confidence(); e.signals=request.signals()==null?null:json.writeValueAsString(request.signals());
-        boolean changed=s.currentState!=request.state();
         if(changed) change(s,current,e,effective,now);
         s.lastSeq=request.seq(); s.verifiedUntil=max(s.verifiedUntil,effective);
         TransitionResponse response=new TransitionResponse(request.eventId(),request.seq(),false,now,effective,

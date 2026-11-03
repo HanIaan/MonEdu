@@ -80,10 +80,11 @@ Remove old marker/result files before a fresh run so these timing gates cannot m
 python3 backend/loadtest/render_results.py
 ```
 
-`CONTRACT_CHANGE_REQUEST.md` records an unresolved recovery-accounting contradiction. The real
-restart probe sends an old event before its fresh heartbeat (zero inflation); the fixture probe
-reverses those calls and measures the allowed offline-gap credit. This is documented, not silently
-changed against the binding contract.
+`CONTRACT_CHANGE_REQUEST.md` records the recovery-accounting issue approved by C0 in `d7cacc8`
+and resolved in P2-W2b. Historical heartbeat-first credit was +90 seconds; the four new injected-Clock
+regressions verify zero offline credit, both request orderings, ordinary UNKNOWN clamping and replay.
+Rebuild the backend jar before running probes against the fix; memory_probe.py now requires zero
+extra offline focus seconds. The historical load measurements in RESULTS.md remain unchanged.
 
 The **final** memory numbers come from a fresh isolated server/database after the cohort runner has
 removed its container:
