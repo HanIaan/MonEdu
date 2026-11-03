@@ -20,6 +20,195 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Password sign-up (v1.3). Logs the new user in. Password policy in docs/contracts/auth.md §1. */
+        post: operations["signup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rotates the refresh cookie and returns a new access token. Reuse of a rotated token revokes its family. */
+        post: operations["refreshToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revokes the refresh-token family of the presented cookie and clears it. 204 even without a cookie. */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAuthProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/kakao/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Top-level navigation only. Sets the `sm_oauth` state cookie and redirects to Kakao. */
+        get: operations["kakaoStart"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/kakao/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Kakao redirect URI. Always answers 302 to the frontend (docs/contracts/auth.md §4):
+         *     `/auth/kakao/done` (existing user, sets `sm_rt`), `/signup/kakao` (new user, sets `sm_signup`),
+         *     `/login?error=kakao_cancelled` or `/login?error=kakao_failed`. Never puts tokens in a URL.
+         */
+        get: operations["kakaoCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/kakao/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["kakaoPending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/kakao/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["kakaoComplete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/invite-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The teacher's active invite code (created on first call). TEACHER only. */
+        get: operations["getInviteCode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teacher/invite-code/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revokes the active code and issues a new one. Existing links stay. TEACHER only. */
+        post: operations["rotateInviteCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/teachers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teachers this student is linked to, oldest first. STUDENT only. */
+        get: operations["listMyTeachers"];
+        put?: never;
+        /** @description Link to a teacher with an invite code. Idempotent (already linked → 200 with the existing link). STUDENT only. */
+        post: operations["joinTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -289,7 +478,7 @@ export interface components {
          */
         LateStatus: "ON_TIME" | "LATE" | "NOT_SEATED";
         /** @enum {string} */
-        ErrorCode: "VALIDATION_FAILED" | "BAD_CREDENTIALS" | "UNAUTHORIZED" | "FORBIDDEN" | "STUDENT_NOT_ASSIGNED" | "NOT_FOUND" | "SESSION_ENDED" | "SEQ_OUT_OF_ORDER" | "EVENT_ID_CONFLICT" | "CLOCK_SKEW" | "INTERNAL_ERROR";
+        ErrorCode: "VALIDATION_FAILED" | "BAD_CREDENTIALS" | "UNAUTHORIZED" | "FORBIDDEN" | "STUDENT_NOT_ASSIGNED" | "NOT_FOUND" | "SESSION_ENDED" | "SEQ_OUT_OF_ORDER" | "EVENT_ID_CONFLICT" | "CLOCK_SKEW" | "INTERNAL_ERROR" | "EMAIL_TAKEN" | "TOO_MANY_ATTEMPTS" | "INVITE_CODE_INVALID" | "PROVIDER_DISABLED";
         Problem: {
             /** @example about:blank */
             type: string;
@@ -307,8 +496,11 @@ export interface components {
         User: {
             /** Format: uuid */
             id: string;
-            /** Format: email */
-            email: string;
+            /**
+             * Format: email
+             * @description v1.3 — null for Kakao-only accounts
+             */
+            email: string | null;
             displayName: string;
             role: components["schemas"]["Role"];
         };
@@ -324,6 +516,60 @@ export interface components {
             /** @description Seconds until expiry */
             expiresIn: number;
             user: components["schemas"]["User"];
+        };
+        Agreements: {
+            /**
+             * @description 이용약관 동의
+             * @constant
+             */
+            terms: true;
+            /**
+             * @description 개인정보 처리방침 동의
+             * @constant
+             */
+            privacy: true;
+        };
+        SignupRequest: {
+            /** Format: email */
+            email: string;
+            /** @description Policy in docs/contracts/auth.md §1 */
+            password: string;
+            displayName: string;
+            role: components["schemas"]["Role"];
+            agreements: components["schemas"]["Agreements"];
+        };
+        AuthProviders: {
+            /** @description Email/password sign-up and login */
+            password: boolean;
+            /** @description Kakao login is configured on this server */
+            kakao: boolean;
+        };
+        KakaoPending: {
+            /** @description Kakao profile nickname */
+            nickname: string | null;
+        };
+        KakaoCompleteRequest: {
+            displayName: string;
+            role: components["schemas"]["Role"];
+            agreements: components["schemas"]["Agreements"];
+        };
+        InviteCode: {
+            code: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        JoinTeacherRequest: {
+            /** @description Normalised server-side (upper-case */
+            inviteCode: string;
+        };
+        TeacherLink: {
+            teacher: {
+                /** Format: uuid */
+                id: string;
+                displayName: string;
+            };
+            /** Format: date-time */
+            linkedAt: string;
         };
         StartSessionRequest: {
             /**
@@ -599,9 +845,20 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description Sequencing / idempotency / session-state conflict */
+        /** @description Sequencing / idempotency / session-state conflict / email already registered */
         Conflict: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description Throttled (TOO_MANY_ATTEMPTS). See docs/contracts/auth.md §3. */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds until the next attempt is allowed */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -615,7 +872,13 @@ export interface components {
         StudyDate: string;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /**
+         * @description `sm_rt=<token>; HttpOnly; SameSite=Lax; Path=/api/v1/auth; Max-Age=<REFRESH_TTL>[; Secure]`
+         *     (cleared with Max-Age=0 on logout and on any refresh 401).
+         */
+        RefreshCookie: string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -633,9 +896,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Authenticated */
+            /** @description Authenticated. v1.3 also sets the refresh cookie `sm_rt`. */
             200: {
                 headers: {
+                    "Set-Cookie": components["headers"]["RefreshCookie"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -644,6 +908,285 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    signup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupRequest"];
+            };
+        };
+        responses: {
+            /** @description Account created and authenticated */
+            201: {
+                headers: {
+                    "Set-Cookie": components["headers"]["RefreshCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    refreshToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New access token */
+            200: {
+                headers: {
+                    "Set-Cookie": components["headers"]["RefreshCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logged out */
+            204: {
+                headers: {
+                    "Set-Cookie": components["headers"]["RefreshCookie"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getAuthProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Which login methods are enabled on this server */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviders"];
+                };
+            };
+        };
+    };
+    kakaoStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the Kakao authorize URL */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    kakaoCallback: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the frontend */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    kakaoPending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending Kakao sign-up (for prefilling the form) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KakaoPending"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    kakaoComplete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KakaoCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Account created (or the existing Kakao account) and authenticated */
+            201: {
+                headers: {
+                    "Set-Cookie": components["headers"]["RefreshCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getInviteCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active invite code */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCode"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    rotateInviteCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New invite code */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCode"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyTeachers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Linked teachers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherLink"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    joinTeacher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinTeacherRequest"];
+            };
+        };
+        responses: {
+            /** @description Linked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherLink"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getMe: {

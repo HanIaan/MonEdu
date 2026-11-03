@@ -2,7 +2,7 @@
  * SSE over fetch (owner: C0). EventSource cannot send Authorization headers, so we stream
  * text/event-stream with fetch and parse frames. Auto-reconnects with backoff.
  */
-import { API_BASE_URL } from './client';
+import { API_BASE_URL, refreshAccessToken } from './client';
 import { getToken, notifyUnauthorized } from './token';
 import type { StreamEvent } from './types';
 
@@ -51,6 +51,7 @@ export function subscribeStream(path: StreamPath, handlers: StreamHandlers): () 
   let controller: AbortController | null = null;
   let retryMs = 1000;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let refreshedOnce = false;
 
   const setStatus = (s: StreamConnection) => handlers.onStatus?.(s);
 
@@ -66,11 +67,18 @@ export function subscribeStream(path: StreamPath, handlers: StreamHandlers): () 
         cache: 'no-store',
       });
       if (res.status === 401) {
+        // Access token expired: refresh from the cookie and reconnect at once; otherwise log out.
+        if (!refreshedOnce && (await refreshAccessToken())) {
+          refreshedOnce = true;
+          void connect();
+          return;
+        }
         notifyUnauthorized();
         closed = true;
         setStatus('closed');
         return;
       }
+      refreshedOnce = false;
       if (!res.ok || !res.body) throw new Error(`SSE HTTP ${res.status}`);
       retryMs = 1000;
       setStatus('open');

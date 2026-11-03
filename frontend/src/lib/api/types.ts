@@ -24,3 +24,12 @@ export type SessionSummary = S['SessionSummary'];
 export type StudyDayReport = S['StudyDayReport'];
 export type TeacherStudentOverview = S['TeacherStudentOverview'];
 export type StreamEvent = S['StreamEvent'];
+// v1.3 accounts / Kakao / invite codes (docs/contracts/auth.md)
+export type Agreements = S['Agreements'];
+export type SignupRequest = S['SignupRequest'];
+export type AuthProviders = S['AuthProviders'];
+export type KakaoPending = S['KakaoPending'];
+export type KakaoCompleteRequest = S['KakaoCompleteRequest'];
+export type InviteCode = S['InviteCode'];
+export type JoinTeacherRequest = S['JoinTeacherRequest'];
+export type TeacherLink = S['TeacherLink'];
