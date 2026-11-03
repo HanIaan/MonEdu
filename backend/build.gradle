@@ -48,3 +48,20 @@ tasks.named('test') {
 		exceptionFormat 'full'
 	}
 }
+
+sourceSets {
+    loadtest {
+        java.srcDir 'loadtest/src'
+        compileClasspath += sourceSets.main.runtimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+tasks.register('loadtest', JavaExec) {
+    group = 'verification'
+    description = 'Isolated HTTP/SSE load driver; see loadtest/README.md'
+    classpath = sourceSets.loadtest.runtimeClasspath
+    mainClass = 'com.studymonitor.loadtest.LoadTest'
+}
+tasks.register('loadtestClasspath') {
+    doLast { println sourceSets.loadtest.runtimeClasspath.asPath }
+}
