@@ -7,10 +7,16 @@
  * accrues. When no new frame arrives we skip inference, and the state machine's staleFrameMs rule
  * reports INFERENCE_STALLED.
  *
- * Evidence of a new frame (either suffices):
- *  - `video.currentTime` changed (advances continuously for a playing MediaStream), or
- *  - a `requestVideoFrameCallback` fired (where supported; may not fire for non-composited videos,
- *    which is why currentTime is also accepted).
+ * Evidence of a new frame:
+ *  - **requestVideoFrameCallback is authoritative** once it is supported AND has fired at least once
+ *    for this video: then a frame is new only if rVFC fired since the last analysed frame, and
+ *    currentTime is ignored. For MediaStream sources currentTime is a wall clock, not a frame counter:
+ *    measured in Chromium 156, a stream whose source stopped producing frames (track still live)
+ *    advanced currentTime +3.0 s in 3 s while rVFC fired 0 times. rVFC was measured to keep firing for
+ *    display:none / detached / 2×2 px videos in Chromium 156 and WebKit (Playwright 27.2), ≈15 fps.
+ *  - **Fallback** (rVFC unsupported, or not fired yet): `video.currentTime` changed. LIMITATION: this
+ *    cannot detect frozen MediaStream frames (currentTime keeps advancing); it only catches a paused /
+ *    stopped element.
  * If neither signal is observable (no numeric currentTime and no rVFC) every tick counts as new,
  * i.e. the previous behaviour.
  */
@@ -40,6 +46,11 @@ export class VideoFrameTracker {
 
   /** True when a new frame is available since the last call that returned true (and consumes it). */
   consumeNewFrame(): boolean {
+    if (this.rvfc && this.presented > 0) {
+      if (this.presented === this.lastPresented) return false;
+      this.lastPresented = this.presented;
+      return true;
+    }
     const t = this.video.currentTime;
     const timeKnown = typeof t === 'number' && Number.isFinite(t);
     if (!timeKnown && !this.rvfc) return true;
