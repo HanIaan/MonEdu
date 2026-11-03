@@ -19,6 +19,8 @@ spring:
     locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
   jackson:
     time-zone: UTC
+    deserialization:
+      fail-on-unknown-properties: true
   mvc:
     async:
       request-timeout: -1
