@@ -428,5 +428,31 @@ describe('MonitoringController', () => {
       ctrl.dispose();
       expect(cancel).toHaveBeenCalledWith(7);
     });
+
+    it('frozen MediaStream source (currentTime still advancing, rVFC silent after firing) → INFERENCE_STALLED', async () => {
+      const { ctrl, videoEl, video, transitions, pipeline } = setup();
+      let cb: (() => void) | null = null;
+      let producing = true;
+      Object.assign(video, {
+        requestVideoFrameCallback: (f: () => void) => {
+          cb = f;
+          return 1;
+        },
+        cancelVideoFrameCallback: () => {},
+      });
+      // camera presents a frame every 100 ms while producing
+      const present = setInterval(() => producing && cb?.(), 100);
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(transitions.at(-1)).toMatchObject({ reason: 'SEATED_CONFIRMED' });
+      producing = false; // source stops; video.currentTime (wall clock) keeps advancing
+      await vi.advanceTimersByTimeAsync(600); // the last real frame (presented before the freeze) may still be analysed once
+      const calls = pipeline.analyzeCalls;
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(pipeline.analyzeCalls).toBe(calls);
+      expect(transitions.at(-1)).toMatchObject({ state: 'UNKNOWN', reason: 'INFERENCE_STALLED' });
+      clearInterval(present);
+      ctrl.dispose();
+    });
   });
 });
