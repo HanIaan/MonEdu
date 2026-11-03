@@ -1,14 +1,23 @@
 'use client';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
 import { useAuth } from '@/lib/api/auth';
+import { KakaoLoginButton } from '@/components/KakaoLoginButton';
 import { LoginForm } from '@/components/LoginForm';
 import { homeForRole } from '@/components/roles';
 
-export default function LoginPage() {
+const NOTICES: Record<string, string> = {
+  kakao_cancelled: '카카오 로그인이 취소되었습니다.',
+  kakao_failed: '카카오 로그인에 실패했습니다. 다시 시도해 주세요.',
+};
+
+function LoginPageContent() {
   const { status, user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const errorParam = searchParams.get('error');
+  const notice = errorParam ? (NOTICES[errorParam] ?? null) : null;
 
   useEffect(() => {
     if (status === 'authenticated' && user) router.replace(homeForRole(user.role));
@@ -28,21 +37,27 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-500">학습 모니터링에 로그인하세요.</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <LoginForm />
+        <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <LoginForm notice={notice} />
+          <KakaoLoginButton />
         </div>
 
-        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3 text-xs leading-relaxed text-slate-600">
-          <p className="font-medium text-slate-700">데모 계정</p>
-          <p className="mt-1">
-            학생 <code className="rounded bg-white px-1 py-0.5 text-slate-800">student1@demo.local</code>
-            <span className="mx-1.5 text-slate-400">/</span>
-            교사 <code className="rounded bg-white px-1 py-0.5 text-slate-800">teacher@demo.local</code>
-          </p>
-          <p className="mt-1">
-            비밀번호 <code className="rounded bg-white px-1 py-0.5 text-slate-800">demo1234!</code>
-          </p>
-        </div>
+        {process.env.NEXT_PUBLIC_SHOW_DEMO_ACCOUNTS === '1' ? (
+          <div
+            data-testid="demo-accounts"
+            className="mt-5 rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3 text-xs leading-relaxed text-slate-600"
+          >
+            <p className="font-medium text-slate-700">데모 계정</p>
+            <p className="mt-1">
+              학생 <code className="rounded bg-white px-1 py-0.5 text-slate-800">student1@demo.local</code>
+              <span className="mx-1.5 text-slate-400">/</span>
+              교사 <code className="rounded bg-white px-1 py-0.5 text-slate-800">teacher@demo.local</code>
+            </p>
+            <p className="mt-1">
+              비밀번호 <code className="rounded bg-white px-1 py-0.5 text-slate-800">demo1234!</code>
+            </p>
+          </div>
+        ) : null}
 
         <p className="mt-6 text-center text-xs text-slate-500">
           <Link href="/privacy" className="underline underline-offset-2 hover:text-slate-700">
@@ -53,5 +68,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="grid min-h-screen place-items-center bg-slate-50 px-4 text-sm text-slate-500" role="status">
+          불러오는 중…
+        </div>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

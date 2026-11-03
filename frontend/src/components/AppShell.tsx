@@ -55,8 +55,8 @@ export function AppShell({ children, title, subtitle, actions }: AppShellProps) 
   const items = navItemsFor(user?.role ?? null);
 
   const handleLogout = () => {
-    logout();
-    router.replace('/login');
+    // Await the server-side revoke before leaving, so the refresh cookie is cleared too.
+    void logout().finally(() => router.replace('/login'));
   };
 
   return (
