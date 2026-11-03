@@ -63,7 +63,7 @@ Nothing in these fields leaves the browser.
 | Ended | Transition/heartbeat on ENDED session → 409 `SESSION_ENDED`. `end` on ENDED → 200 (idempotent). |
 | Idempotency | `monitoring_events.event_id` UNIQUE. Replay with identical `(seq,state,reason,detectedAt)` → 200 same body, `duplicate: true`. Different payload → 409 `EVENT_ID_CONFLICT`. |
 | Ordering | `seq > session.last_seq` required, else 409 `SEQ_OUT_OF_ORDER`. Gaps allowed. |
-| Clock | `serverReceivedAt` recorded. `detectedAt > now + 5 s` → 400 `CLOCK_SKEW`. `detectedAt` before session start is clamped (see state-machine §4). |
+| Clock | `serverReceivedAt` recorded. `detectedAt > now + 5 s` → 400 `CLOCK_SKEW`. `detectedAt` before session start is clamped (see state-machine §4). Leaving a `HEARTBEAT_TIMEOUT` UNKNOWN interval always takes effect at `serverNow` (state-machine §4, timeout recovery). |
 | Atomicity | Lock the session row (`SELECT … FOR UPDATE`), then event insert + interval close/open + session update in one transaction. Concurrent duplicate posts must yield exactly one stored event. |
 | Fan-out | After commit, publish `StreamEvent` to the student's own stream and to streams of every assigned teacher. |
 | Timeout | See state-machine §4. Publishes `STATE_CHANGED` with reason `HEARTBEAT_TIMEOUT`. |

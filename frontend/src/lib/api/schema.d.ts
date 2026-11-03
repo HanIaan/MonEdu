@@ -98,6 +98,8 @@ export interface paths {
          *       `seq <= lastSeq` with a new eventId → 409 `SEQ_OUT_OF_ORDER`.
          *     - `detectedAt` later than server time + 5s → 400 `CLOCK_SKEW`.
          *     - `effectiveAt = max(detectedAt, currentInterval.startedAt, session.startedAt)`; never in the future.
+         *     - Exception: when the current interval is UNKNOWN opened by HEARTBEAT_TIMEOUT, a state change takes
+         *       effect at server time (`effectiveAt = serverNow`), so an outage is never credited retroactively.
          *     - Closing the current interval, opening the new one, updating the session and storing the
          *       event happen in ONE transaction.
          *     - Transition to the same state as current is accepted and stored as an event but does not

@@ -98,6 +98,12 @@ Notes
   (`HEARTBEAT_TIMEOUT`) at `verifiedUntil`. Unverified time is therefore never counted as focus.
 - **Late events after reconnect:** queued client events are applied with the same `effectiveAt` rule,
   so they cannot rewrite history before the current interval (offline time stays UNKNOWN).
+- **Timeout recovery (contract v1.2, W2 CCR approved by C0):** if the current interval is `UNKNOWN`
+  opened by `HEARTBEAT_TIMEOUT` and an accepted transition changes the state, then
+  `effectiveAt = serverNow` (regardless of `detectedAt` or reason). Without this, a heartbeat that
+  arrives first followed by a queued event detected during the outage would clamp to the UNKNOWN
+  interval's start, delete it as zero-length, and credit the outage as focus (measured: +90 s).
+  The outage therefore stays UNKNOWN until the server actually receives the recovery transition.
 - **End:** close open interval at `clamp(endedAt, currentInterval.startedAt, serverNow)`.
 - **Replace:** starting a session while one is ACTIVE ends the old one at its `verifiedUntil`
   (`SESSION_REPLACED`).
