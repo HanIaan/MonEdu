@@ -592,4 +592,69 @@ class BackendIntegrationTests {
         start();
         assertThat(fresh.events()).hasSize(2);
     }
+
+    Session sessionWithSilentOutage() {
+        Session s=start(); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
+        clock.advance(30); heartbeat(s,true);
+        // Strictly exceed the 90s timeout while keeping the reported outage exactly 90 seconds.
+        clock.time.updateAndGet(time -> time.plusSeconds(90).plusNanos(1_000));
+        return s;
+    }
+    @Test void heartbeatFirstTimeoutRecoveryKeepsOutageUnknown() {
+        Session s=sessionWithSilentOutage(); scheduler.scan();
+        assertThat(heartbeat(s,true).timedOut()).isTrue();
+        Instant received=clock.instant();
+        // The boundary depends on the interval's origin, not on the client's chosen reason.
+        var recovery=sessions.transition(STUDENT,s.id(),request(2,State.FOCUS_ESTIMATED,
+            Reason.SEATED_CONFIRMED,s.startedAt().plusSeconds(60)));
+        assertThat(recovery.effectiveAt()).isEqualTo(received);
+        Report report=reports.mine(STUDENT,DATE);
+        assertThat(report.totals().focusSeconds()).isEqualTo(30);
+        assertThat(report.totals().unknownSeconds()).isEqualTo(90);
+        assertThat(report.intervals().stream().filter(i -> i.reason()==Reason.HEARTBEAT_TIMEOUT))
+            .singleElement().satisfies(i -> assertThat(i.endedAt()).isEqualTo(received));
+        clock.advance(10); heartbeat(s,true);
+        assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(40);
+    }
+    @Test void eventFirstTimeoutRecoveryKeepsOutageUnknown() {
+        Session s=sessionWithSilentOutage(); Instant received=clock.instant();
+        // No scheduled scan: the transition itself must detect silence before choosing its boundary.
+        var recovery=sessions.transition(STUDENT,s.id(),request(2,State.FOCUS_ESTIMATED,
+            Reason.RECONNECTED,s.startedAt().plusSeconds(60)));
+        assertThat(recovery.effectiveAt()).isEqualTo(received);
+        assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(30);
+        assertThat(reports.mine(STUDENT,DATE).totals().unknownSeconds()).isEqualTo(90);
+        heartbeat(s,true);
+        Report report=reports.mine(STUDENT,DATE);
+        assertThat(report.totals().focusSeconds()).isEqualTo(30);
+        assertThat(report.totals().unknownSeconds()).isEqualTo(90);
+    }
+    @Test void nonTimeoutUnknownKeepsOrdinaryClamp() {
+        Session s=start(); clock.advance(20);
+        var initial=sessions.transition(STUDENT,s.id(),request(1,State.FOCUS_ESTIMATED,
+            Reason.SEATED_CONFIRMED,s.startedAt().minusSeconds(60)));
+        assertThat(initial.effectiveAt()).isEqualTo(s.startedAt());
+        clock.advance(10); change(s,2,State.UNKNOWN,Reason.CAMERA_STOPPED);
+        clock.advance(20); Instant onset=clock.instant().minusSeconds(10);
+        var recovery=sessions.transition(STUDENT,s.id(),request(3,State.FOCUS_ESTIMATED,Reason.RECONNECTED,onset));
+        assertThat(recovery.effectiveAt()).isEqualTo(onset).isBefore(clock.instant());
+        assertThat(reports.mine(STUDENT,DATE).totals().unknownSeconds()).isEqualTo(10);
+    }
+    @Test void duplicateTimeoutRecoveryReplaysOriginalBoundary() throws Exception {
+        Session s=sessionWithSilentOutage(); scheduler.scan(); heartbeat(s,true);
+        Instant received=clock.instant();
+        var recovery=request(2,State.FOCUS_ESTIMATED,Reason.RECONNECTED,s.startedAt().plusSeconds(60));
+        var original=sessions.transition(STUDENT,s.id(),recovery);
+        assertThat(original.effectiveAt()).isEqualTo(received);
+        clock.advance(10); change(s,3,State.AWAY,Reason.PRESENCE_LOST);
+        long events=count("monitoring_events"), intervals=count("activity_intervals");
+        Session before=sessions.get(STUDENT,s.id()); clock.advance(20);
+        var replay=body(postJson("/api/v1/study-sessions/"+s.id()+"/transitions",studentToken,recovery)
+            .andExpect(status().isOk()).andExpect(jsonPath("$.duplicate").value(true)).andReturn());
+        assertThat(replay).isEqualTo(json.readTree(json.writeValueAsString(original.replay())));
+        assertThat(sessions.get(STUDENT,s.id())).isEqualTo(before);
+        assertThat(count("monitoring_events")).isEqualTo(events);
+        assertThat(count("activity_intervals")).isEqualTo(intervals);
+        assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(40);
+    }
 }
