@@ -11,8 +11,6 @@ export interface SessionControlsProps {
   onStart: () => void;
   onBreakStart: () => void;
   onBreakEnd: () => void;
-  onPause: () => void;
-  onResume: () => void;
   onEnd: () => void;
   busy?: boolean;
   error?: string | null;
@@ -37,8 +35,6 @@ export function SessionControls({
   onStart,
   onBreakStart,
   onBreakEnd,
-  onPause,
-  onResume,
   onEnd,
   busy = false,
   error = null,
@@ -114,24 +110,6 @@ export function SessionControls({
               className={SECONDARY}
             >
               휴식 종료
-            </button>
-            <button
-              type="button"
-              data-testid="pause-monitoring"
-              onClick={onPause}
-              disabled={busy || monitoring.paused}
-              className={SECONDARY}
-            >
-              모니터링 중단
-            </button>
-            <button
-              type="button"
-              data-testid="resume-monitoring"
-              onClick={onResume}
-              disabled={busy || !monitoring.paused}
-              className={SECONDARY}
-            >
-              모니터링 재개
             </button>
           </div>
         ) : null}
