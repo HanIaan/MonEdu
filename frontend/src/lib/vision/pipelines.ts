@@ -24,12 +24,21 @@ export interface WorkerLike {
   terminate(): void;
 }
 
+/**
+ * CLASSIC worker on purpose: Next 16 Turbopack compiles `new Worker(new URL(...))` into a bootstrap
+ * (`static/chunks/turbopack-worker-*.js`) that loads the worker's chunks with `importScripts`, which
+ * throws in a `{ type: 'module' }` worker — the worker then dies and we fall back to the main thread.
+ * Keep the `new Worker(new URL('…', import.meta.url))` shape literal so the bundler recognises it.
+ */
 export const defaultWorkerFactory = (): WorkerLike =>
-  new Worker(new URL('./vision.worker.ts', import.meta.url), { type: 'module', name: 'vision' }) as unknown as WorkerLike;
+  new Worker(new URL('./vision.worker.ts', import.meta.url), { name: 'vision' }) as unknown as WorkerLike;
 
 export interface WorkerPipelineOptions {
   createWorker?: () => WorkerLike;
   createBitmap?: (video: HTMLVideoElement) => Promise<ImageBitmap>;
+  /** Max time for the worker script to start and post `ready` (fast fallback). Default 4 s. */
+  startTimeoutMs?: number;
+  /** Max time for WASM + models to load once the worker is running. Default 30 s. */
   loadTimeoutMs?: number;
 }
 
@@ -39,11 +48,14 @@ export class WorkerVisionPipeline implements VisionPipeline {
   private disposed = false;
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (o: FrameObservation) => void; reject: (e: Error) => void }>();
-  private loadWaiter: { resolve: () => void; reject: (e: Error) => void } | null = null;
+  private loadWaiter: { resolve: () => void; reject: (e: Error) => void; started: () => void } | null = null;
   private loadPromise: Promise<void> | null = null;
   private readonly createWorker: () => WorkerLike;
   private readonly createBitmap: (video: HTMLVideoElement) => Promise<ImageBitmap>;
   private readonly loadTimeoutMs: number;
+  private readonly startTimeoutMs: number;
+  /** Diagnostics: whether the worker reported running as an ES module worker. */
+  moduleWorker: boolean | null = null;
 
   constructor(
     private readonly settings: VisionSettings,
@@ -52,11 +64,16 @@ export class WorkerVisionPipeline implements VisionPipeline {
     this.createWorker = opts.createWorker ?? defaultWorkerFactory;
     this.createBitmap = opts.createBitmap ?? ((v) => createImageBitmap(v));
     this.loadTimeoutMs = opts.loadTimeoutMs ?? 30_000;
+    this.startTimeoutMs = opts.startTimeoutMs ?? 4_000;
   }
 
   private readonly onMessage = (ev: MessageEvent<FromWorker>) => {
     const msg = ev.data;
     switch (msg.type) {
+      case 'ready':
+        this.moduleWorker = msg.moduleWorker;
+        this.loadWaiter?.started();
+        break;
       case 'loaded':
         this.loadWaiter?.resolve();
         this.loadWaiter = null;
@@ -94,19 +111,31 @@ export class WorkerVisionPipeline implements VisionPipeline {
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = new Promise<void>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const done = (err?: Error) => {
+      const clear = () => {
         if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+      };
+      const done = (err?: Error) => {
+        clear();
         if (err) reject(err);
         else resolve();
       };
-      this.loadWaiter = { resolve: () => done(), reject: (e) => done(e) };
+      this.loadWaiter = {
+        resolve: () => done(),
+        reject: (e) => done(e),
+        // Worker script is running: switch from the short start timeout to the model-load timeout.
+        started: () => {
+          clear();
+          timer = setTimeout(() => this.failAll(new Error('vision worker model load timed out')), this.loadTimeoutMs);
+        },
+      };
       try {
         const w = this.createWorker();
         this.worker = w;
         w.addEventListener('message', this.onMessage);
         w.addEventListener('error', this.onError);
         w.addEventListener('messageerror', this.onError);
-        timer = setTimeout(() => this.failAll(new Error('vision worker load timed out')), this.loadTimeoutMs);
+        timer = setTimeout(() => this.failAll(new Error('vision worker did not start')), this.startTimeoutMs);
         w.postMessage({ type: 'load', settings: this.settings });
       } catch (e) {
         this.loadWaiter = null;

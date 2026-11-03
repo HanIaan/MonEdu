@@ -60,7 +60,19 @@ Verify: `cd frontend/public/models && shasum -a 256 *.tflite *.task`
 
 ## Runtime notes (verified, see below)
 
-- In a **module worker**, tasks-vision's `importScripts` throws `TypeError`, so it loads the WASM
+- **Production / `next dev` (Turbopack, Next 16.4): the worker is a CLASSIC worker.** Turbopack
+  compiles `new Worker(new URL('./vision.worker.ts', import.meta.url))` into
+  `static/chunks/turbopack-worker-*.js`, a bootstrap that loads the worker chunks with
+  `importScripts` — that throws in a `{ type: 'module' }` worker, so the factory must not pass
+  `type: 'module'`. (A raw `static/media/vision.worker.<hash>.ts` is also emitted for the `new URL()`
+  asset reference; it is never executed.) The worker detects classic vs module at runtime
+  (`importScripts()` with no args throws only in module workers) and picks MediaPipe's classic loader
+  (`vision_wasm_internal.js`, re-executed per task by `importScripts`) or the ES-module loader.
+  Using the module loader in a classic worker fails with `Cannot use import.meta outside a module`.
+- Fallback: the worker posts `ready` on start. If it does not arrive within 4 s, or the worker fires
+  `error` (e.g. 404 / bootstrap failure), the pipeline switches to the main thread; the 30 s timeout
+  only applies to model loading inside a worker that did start.
+- In a **module worker** (other ESM bundlers / the verification harness), tasks-vision's `importScripts` throws `TypeError`, so it loads the WASM
   loader via `self.import(url)`. The worker therefore uses `FilesetResolver.forVisionTasks(base, true)`
   (`vision_wasm_module_internal.js`, which sets `globalThis.ModuleFactory`) and provides a
   `self.import` that re-sets `ModuleFactory` from the module's default export — the bundle clears
@@ -144,6 +156,28 @@ Chromium flags `--use-fake-ui-for-media-stream --use-fake-device-for-media-strea
 - transitions: exactly one, `UNKNOWN → FOCUS_ESTIMATED (SEATED_CONFIRMED)`, `detectedAt` = first
   processed frame (433 ms after start), signals `{faceScore 0.93, poseScore 1, phoneScore 0.41}`
 - after `dispose()`: track `readyState = "ended"`, `video.srcObject = null`; no console errors.
+
+### Next.js integration (2026-11-03, W1-FIX-WORKER)
+
+Throwaway worktree of `agent/claude-coordinator` (879d409) + this branch merged, outside the repo;
+`npm ci && npm run build` (Next 16.4.4 Turbopack), served with `next start` (and `next dev`), headless
+Chromium 156 with a fake camera (`person.mjpeg`):
+
+- `next build` + `next start`, throwaway `/wcheck` page using the production factories:
+  `createVisionPipeline().load()` → `backend: "WORKER"`, `workerError: null`, real observation
+  (face 0.91, shoulders 1.00, phone 0.45); `createMonitoringController()` → `inferenceBackend: "WORKER"`,
+  34 frames, 0 skipped, avg 48.8 ms, `UNKNOWN→FOCUS_ESTIMATED (SEATED_CONFIRMED)`; worker URL
+  `/_next/static/chunks/turbopack-worker-*.js`; no console errors.
+- `next dev`: same page, same result (`WORKER`, SEATED_CONFIRMED, no `[vision]` fallback warning).
+- Real `/student` page (built with `NEXT_PUBLIC_API_BASE_URL` → an isolated backend + Postgres with
+  demo seed): login `student1@demo.local` → consent → start → one Turbopack worker, no fallback
+  warning, `POST …/transitions {FOCUS_ESTIMATED, SEATED_CONFIRMED}` after ~15 s.
+- Forced worker failure via request interception: worker script 404 → `MAIN_THREAD` after
+  1.3 s total (including main-thread model load); worker script never delivered → `MAIN_THREAD`
+  after 5.3 s (4 s start timeout + load); seating still confirmed in both.
+- Before the fix (C0 evidence + reproduction): module worker → bootstrap `importScripts` throws, or
+  (dev) classic worker + ES-module loader → `Cannot use import.meta outside a module`; both fell back
+  to `MAIN_THREAD`.
 
 Not verified: real webcams / real rooms, Safari and Firefox, low-end devices, GPU delegate,
 long-running memory behaviour, background-tab throttling in a real browser (covered only by unit

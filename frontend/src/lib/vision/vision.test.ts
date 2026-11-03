@@ -3,7 +3,7 @@ import type { FrameObservation, VisionPipeline } from '@/features/monitoring/con
 import { visionSettingsFromConfig } from './config';
 import { assessFrameQuality } from './frameQuality';
 import { toFrameObservation, type RawVisionResults } from './observation';
-import { AutoVisionPipeline, WorkerVisionPipeline, type WorkerLike } from './pipelines';
+import { AutoVisionPipeline, WorkerVisionPipeline, defaultWorkerFactory, type WorkerLike } from './pipelines';
 import type { FromWorker, ToWorker } from './protocol';
 
 const settings = visionSettingsFromConfig(undefined, 'http://localhost:3000');
@@ -89,7 +89,7 @@ class FakeWorker implements WorkerLike {
   posted: { msg: ToWorker; transfer?: Transferable[] }[] = [];
   terminated = false;
   private ls = new Map<string, Set<(ev: never) => void>>();
-  constructor(private readonly behaviour: 'ok' | 'loadError' | 'silent') {}
+  constructor(private readonly behaviour: 'ok' | 'loadError' | 'silent' | 'hangsAfterStart') {}
   addEventListener(type: string, l: (ev: never) => void) {
     if (!this.ls.has(type)) this.ls.set(type, new Set());
     this.ls.get(type)!.add(l);
@@ -106,6 +106,7 @@ class FakeWorker implements WorkerLike {
   postMessage(msg: ToWorker, transfer?: Transferable[]) {
     this.posted.push({ msg, transfer });
     if (msg.type === 'load') {
+      if (this.behaviour !== 'silent') this.reply({ type: 'ready', moduleWorker: false });
       if (this.behaviour === 'ok') this.reply({ type: 'loaded' });
       if (this.behaviour === 'loadError') this.reply({ type: 'loadError', message: 'no OffscreenCanvas' });
     }
@@ -121,6 +122,21 @@ class FakeWorker implements WorkerLike {
     this.terminated = true;
   }
 }
+
+describe('defaultWorkerFactory', () => {
+  it('creates a CLASSIC worker (Turbopack worker bootstrap uses importScripts → illegal in module workers)', () => {
+    const ctor = vi.fn();
+    vi.stubGlobal('Worker', ctor);
+    try {
+      defaultWorkerFactory();
+      const [url, opts] = ctor.mock.calls[0]! as [URL, WorkerOptions];
+      expect(String(url)).toMatch(/vision\.worker\.ts/);
+      expect(opts.type).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('WorkerVisionPipeline', () => {
   it('loads, transfers a fresh ImageBitmap per frame, disposes the worker', async () => {
@@ -143,18 +159,49 @@ describe('WorkerVisionPipeline', () => {
     await expect(p.analyze({} as HTMLVideoElement, 43, { runPhone: false })).rejects.toThrow();
   });
 
-  it('rejects load on worker loadError and on timeout', async () => {
+  it('rejects load on worker loadError', async () => {
     await expect(new WorkerVisionPipeline(settings, { createWorker: () => new FakeWorker('loadError') }).load()).rejects.toThrow('no OffscreenCanvas');
+  });
+
+  it('fails fast (default 4 s) when the worker script never starts, before the long model-load timeout', async () => {
     vi.useFakeTimers();
     try {
-      const p = new WorkerVisionPipeline(settings, { createWorker: () => new FakeWorker('silent'), loadTimeoutMs: 1000 });
+      const p = new WorkerVisionPipeline(settings, { createWorker: () => new FakeWorker('silent') });
       const l = p.load();
-      const assertion = expect(l).rejects.toThrow('timed out');
-      await vi.advanceTimersByTimeAsync(1001);
+      const assertion = expect(l).rejects.toThrow('did not start');
+      await vi.advanceTimersByTimeAsync(4_001);
       await assertion;
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('a started worker gets the longer model-load timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const p = new WorkerVisionPipeline(settings, { createWorker: () => new FakeWorker('hangsAfterStart'), loadTimeoutMs: 30_000 });
+      let settled = false;
+      const l = p.load().catch((e: Error) => {
+        settled = true;
+        throw e;
+      });
+      const assertion = expect(l).rejects.toThrow('model load timed out');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(settled).toBe(false); // past the 4 s start timeout: worker is running, keep waiting
+      expect(p.moduleWorker).toBe(false);
+      await vi.advanceTimersByTimeAsync(20_001);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('worker error event rejects load immediately (e.g. bootstrap failure)', async () => {
+    const w = new FakeWorker('silent');
+    const p = new WorkerVisionPipeline(settings, { createWorker: () => w });
+    const l = p.load();
+    (w as unknown as { ls: Map<string, Set<(e: Event) => void>> }).ls.get('error')!.forEach((f) => f({ message: "Module scripts don't support importScripts()" } as ErrorEvent));
+    await expect(l).rejects.toThrow('importScripts');
   });
 });
 
