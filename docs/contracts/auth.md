@@ -57,11 +57,13 @@ the rules the shapes cannot express. Decisions confirmed by the user (2026-11-04
 | Key | Limit | Response |
 |---|---|---|
 | login failures per email (known or unknown) | 5 consecutive failures → locked 15 min; success resets | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` (seconds); while locked, even a correct password gets 429 |
-| auth requests per client IP (`signup`, `login`, `refresh`, `kakao/*`) | 30 / minute | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
+| credential requests per client IP (`signup`, `login`, `kakao/start`, `kakao/callback`, `kakao/complete`) | `AUTH_IP_LIMIT_PER_MINUTE` (default 30) / minute | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
+| `refresh` per client IP (every page load calls it) | `REFRESH_IP_LIMIT_PER_MINUTE` (default 120) / minute | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
 | invite-code join attempts per student | 10 / 10 minutes | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
 
 Client IP = the socket remote address. `X-Forwarded-For` is trusted only when
 `TRUSTED_PROXY=true`, and then only its last hop.
+E2E/load-test scripts raise both IP limits via env (all their traffic comes from one IP).
 The login error for a wrong password and for an unknown email is identical (`BAD_CREDENTIALS`), as before.
 
 ## 4. Kakao login (OAuth 2.0 authorization code, server-side)
