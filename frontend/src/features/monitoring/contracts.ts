@@ -65,7 +65,7 @@ export interface EngineConfig {
   inferenceIntervalMs: number;
   /** Object (phone) detector cadence. */
   phoneIntervalMs: number;
-  /** Requested camera resolution (low-res first). */
+  /** Requested camera resolution (`ideal` constraints). v1.2: 640×480 — +7 pp phone recall at ~+1 ms/tick (bench §A). */
   camera: { width: number; height: number; frameRate: number };
 }
 
@@ -83,7 +83,7 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   phoneMinScore: 0.5,
   inferenceIntervalMs: 500,
   phoneIntervalMs: 1_000,
-  camera: { width: 320, height: 240, frameRate: 15 },
+  camera: { width: 640, height: 480, frameRate: 15 },
 };
 
 // ───────────────────────────── Vision (W1: lib/vision) ─────────────────────────────
