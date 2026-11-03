@@ -69,6 +69,8 @@ describe('toFrameObservation', () => {
       phoneDetected: false,
       phoneScore: 0.4,
       inferenceMs: 12,
+      personDetected: false, // v1.2: object detector ran, no person category in its output
+      personScore: 0,
     } satisfies FrameObservation);
   });
 
@@ -82,6 +84,22 @@ describe('toFrameObservation', () => {
     expect(o).toMatchObject({ phoneEvaluated: false, phoneDetected: false, phoneScore: 0, error: 'pose: x' });
     const p = toFrameObservation(raw({ objectDetections: [{ categories: [{ score: 0.9, categoryName: 'cell phone' }] }], phoneEvaluated: true }), settings);
     expect(p).toMatchObject({ phoneDetected: true, phoneScore: 0.9 });
+  });
+
+  it('v1.2 person evidence: only on object-detector ticks, best "person" score vs personMinScore', () => {
+    const dets = [
+      { categories: [{ score: 0.42, categoryName: 'person' }] },
+      { categories: [{ score: 0.77, categoryName: 'person' }] },
+      { categories: [{ score: 0.6, categoryName: 'cell phone' }] },
+    ];
+    const o = toFrameObservation(raw({ objectDetections: dets, phoneEvaluated: true }), settings);
+    expect(o).toMatchObject({ personDetected: true, personScore: 0.77, phoneScore: 0.6 });
+    const weak = toFrameObservation(raw({ objectDetections: [dets[0]!], phoneEvaluated: true }), settings);
+    expect(weak).toMatchObject({ personDetected: false, personScore: 0.42 });
+    // detector did not run this tick → not reported (undefined), never "no person"
+    const skipped = toFrameObservation(raw({ objectDetections: null, phoneEvaluated: false }), settings);
+    expect(skipped.personDetected).toBeUndefined();
+    expect(skipped.personScore).toBeUndefined();
   });
 });
 

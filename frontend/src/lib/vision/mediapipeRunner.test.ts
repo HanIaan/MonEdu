@@ -37,13 +37,14 @@ describe('MediaPipeRunner', () => {
   const img = {} as HTMLCanvasElement;
   const EPOCH = Date.parse('2026-11-03T00:13:22Z');
 
-  it('configures tasks (VIDEO, CPU, phone allowlist) and loads from same-origin paths', async () => {
+  it('configures tasks (VIDEO, CPU, phone + person allowlist) and loads from same-origin paths', async () => {
     const { tasks, opts } = fakeTasks();
     await MediaPipeRunner.create(tasks as never, settings, true);
     expect(tasks.FilesetResolver.forVisionTasks).toHaveBeenCalledWith('http://localhost:3000/mediapipe/wasm', true);
     expect(opts.object).toMatchObject({
       runningMode: 'VIDEO',
-      categoryAllowlist: ['cell phone'],
+      categoryAllowlist: ['cell phone', 'person'],
+      maxResults: 10,
       baseOptions: { modelAssetPath: 'http://localhost:3000/models/efficientdet_lite0.tflite', delegate: 'CPU' },
     });
     expect(opts.pose).toMatchObject({ numPoses: 1, outputSegmentationMasks: false });

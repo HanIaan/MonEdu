@@ -23,17 +23,18 @@ function obs(at: number, kind: Kind, phone?: boolean | number): FrameObservation
     inferenceMs: 20,
   };
   switch (kind) {
+    // v1.2: frames of a real student carry COCO person evidence from the object detector
     case 'present':
-      Object.assign(base, { faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9 });
+      Object.assign(base, { faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9, personDetected: true, personScore: 0.9 });
       break;
-    case 'faceOnly':
+    case 'faceOnly': // a face with no person detection (e.g. a pet, a poster)
       Object.assign(base, { faceDetected: true, faceScore: 0.85 });
       break;
     case 'bodyOnly':
-      Object.assign(base, { upperBodyDetected: true, poseScore: 0.8 });
+      Object.assign(base, { upperBodyDetected: true, poseScore: 0.8, personDetected: true, personScore: 0.8 });
       break;
     case 'headDown': // face barely detected (looking down at notebook), shoulders visible
-      Object.assign(base, { faceDetected: true, faceScore: 0.25, upperBodyDetected: true, poseScore: 0.7 });
+      Object.assign(base, { faceDetected: true, faceScore: 0.25, upperBodyDetected: true, poseScore: 0.7, personDetected: true, personScore: 0.85 });
       break;
     case 'grey':
       Object.assign(base, { faceDetected: true, faceScore: 0.45, poseScore: 0.2 });
@@ -86,11 +87,13 @@ function seated(start = T0): { sm: StateMachine; t: number } {
 
 describe('classifyFrame', () => {
   const cfg = DEFAULT_ENGINE_CONFIG;
-  it('face OR shoulders = PRESENT; head pose is not an input', () => {
+  it('person AND (face OR shoulders) = PRESENT; head pose is not an input', () => {
     expect(classifyFrame(obs(0, 'present'), cfg)).toBe('PRESENT');
-    expect(classifyFrame(obs(0, 'faceOnly'), cfg)).toBe('PRESENT');
     expect(classifyFrame(obs(0, 'bodyOnly'), cfg)).toBe('PRESENT');
     expect(classifyFrame(obs(0, 'headDown'), cfg)).toBe('PRESENT');
+  });
+  it('v1.2: a face alone (no person detection) is never PRESENT', () => {
+    expect(classifyFrame(obs(0, 'faceOnly'), cfg)).toBe('UNCERTAIN');
   });
   it('absent / grey / low quality / error', () => {
     expect(classifyFrame(obs(0, 'absent'), cfg)).toBe('ABSENT');
@@ -384,5 +387,108 @@ describe('config', () => {
     const sm = createStateMachine({ seatedConfirmMs: 2_000, debounceMs: 500 });
     const tr = run(sm, T0, T0 + 2_500, 'present');
     expect(tr[0]).toMatchObject({ reason: 'SEATED_CONFIRMED', detectedAt: T0 });
+  });
+});
+
+describe('v1.2 presence rule: pets / head-down / person evidence (bench/vision/RESULTS.md §B)', () => {
+  const cfg = DEFAULT_ENGINE_CONFIG;
+  const o = (at: number, p: Partial<FrameObservation>): FrameObservation => ({
+    at,
+    frameQuality: 'OK',
+    faceDetected: false,
+    faceScore: 0,
+    upperBodyDetected: false,
+    poseScore: 0,
+    phoneEvaluated: false,
+    phoneDetected: false,
+    phoneScore: 0,
+    inferenceMs: 20,
+    ...p,
+  });
+  // Measured pet profile: BlazeFace 0.71–0.79, pose sometimes fires, COCO person ≈ 0.
+  const pet = (at: number, i: number) =>
+    o(at, { faceDetected: true, faceScore: 0.75, upperBodyDetected: i % 3 === 0, poseScore: i % 3 === 0 ? 0.6 : 0.1, ...(i % 2 === 0 ? { phoneEvaluated: true, personDetected: false, personScore: 0.07 } : {}) });
+  // Head down writing: face lost, shoulders visible, person detected at 1 Hz (every other frame).
+  const writing = (at: number, i: number) =>
+    o(at, { faceScore: 0.1, upperBodyDetected: true, poseScore: 0.95, ...(i % 2 === 0 ? { phoneEvaluated: true, personDetected: true, personScore: 0.86 } : {}) });
+
+  it('pet face (and even pet "shoulders") without a person detection is UNCERTAIN, never PRESENT', () => {
+    expect(classifyFrame(pet(0, 0), cfg)).toBe('UNCERTAIN');
+    expect(classifyFrame(pet(0, 1), cfg)).toBe('UNCERTAIN');
+    expect(classifyFrame(o(0, { faceScore: 0.79, upperBodyDetected: true, poseScore: 0.8, personDetected: false, personScore: 0.1 }), cfg)).toBe('UNCERTAIN');
+  });
+
+  it('pet alone in front of the camera for 2 min never confirms seating', () => {
+    const sm = createStateMachine(undefined, { state: 'UNKNOWN', since: T0 });
+    expect(run(sm, T0, T0 + 120 * S, pet)).toEqual([]);
+    expect(sm.state).toBe('UNKNOWN');
+  });
+
+  it('student leaves and a pet takes the seat → UNKNOWN (LOW_CONFIDENCE), not FOCUS', () => {
+    const { sm, t } = seated();
+    const tr = run(sm, t, t + 60 * S, pet);
+    expect(tr).toHaveLength(1);
+    expect(tr[0]).toMatchObject({ from: 'FOCUS_ESTIMATED', state: 'UNKNOWN', reason: 'LOW_CONFIDENCE', detectedAt: t });
+  });
+
+  it('head-down writing (no face, shoulders + person at 1 Hz) confirms seating and stays FOCUS for 10 min', () => {
+    const sm = createStateMachine(undefined, { state: 'UNKNOWN', since: T0 - 60 * S });
+    const tr = run(sm, T0, T0 + 600 * S, writing);
+    expect(tr).toHaveLength(1);
+    expect(tr[0]).toMatchObject({ state: 'FOCUS_ESTIMATED', reason: 'SEATED_CONFIRMED', detectedAt: T0 });
+  });
+
+  it('shoulders hidden too: a strong person score (≥ 0.7) alone is PRESENT, a weak one is UNCERTAIN', () => {
+    expect(classifyFrame(o(0, { personDetected: true, personScore: 0.86 }), cfg)).toBe('PRESENT');
+    expect(classifyFrame(o(0, { personDetected: true, personScore: 0.6 }), cfg)).toBe('UNCERTAIN');
+    // person detection + grey-zone face (0.3–0.6), no shoulders
+    expect(classifyFrame(o(0, { faceScore: 0.45, personDetected: true, personScore: 0.6 }), cfg)).toBe('UNCERTAIN');
+    expect(classifyFrame(o(0, { faceScore: 0.45, personDetected: true, personScore: 0.75 }), cfg)).toBe('PRESENT');
+  });
+
+  it('person evidence is held ≤ 5 s across detector gaps (low-power phone cadence 4 s), then expires', () => {
+    const sm = createStateMachine(undefined, { state: 'UNKNOWN', since: T0 - 60 * S });
+    // face + shoulders every 500 ms, person only every 4 s
+    const lowPower = (at: number, i: number) =>
+      o(at, { faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9, ...(i % 8 === 0 ? { phoneEvaluated: true, personDetected: true, personScore: 0.9 } : {}) });
+    expect(run(sm, T0, T0 + 16 * S, lowPower)).toMatchObject([{ reason: 'SEATED_CONFIRMED', detectedAt: T0 }]);
+    // detector stops reporting (e.g. object model failing): after 5 s face+shoulders alone are UNCERTAIN
+    const t = T0 + 16 * S;
+    const noPerson = (at: number) => o(at, { faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9 });
+    const tr = run(sm, t, t + 30 * S, noPerson);
+    expect(tr).toHaveLength(1);
+    expect(tr[0]).toMatchObject({ state: 'UNKNOWN', reason: 'LOW_CONFIDENCE' });
+    // last person evidence was at T0 + 12 s (frame 24); first frame with expired evidence = +5.5 s
+    expect(tr[0]!.detectedAt).toBe(T0 + 12 * S + 5_500);
+  });
+
+  it('leaving is not delayed by held person evidence: AWAY onset = first empty frame', () => {
+    const { sm, t } = seated();
+    const tr = run(sm, t, t + 31 * S, 'absent'); // no detector output on these frames at all
+    expect(tr).toMatchObject([{ state: 'AWAY', reason: 'PRESENCE_LOST', detectedAt: t }]);
+  });
+
+  it('empty desk with a weak person false positive (0.5–0.7) is UNCERTAIN, not PRESENT', () => {
+    expect(classifyFrame(o(0, { faceScore: 0.32, personDetected: true, personScore: 0.62 }), cfg)).toBe('UNCERTAIN');
+    expect(classifyFrame(o(0, { personDetected: false, personScore: 0.3 }), cfg)).toBe('ABSENT');
+  });
+
+  it('producer without person evidence (v1.1 / object detector down): face + shoulders never confirm seating', () => {
+    const sm = createStateMachine(undefined, { state: 'UNKNOWN', since: T0 });
+    const v11 = (at: number) => o(at, { faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9 });
+    expect(run(sm, T0, T0 + 60 * S, v11)).toEqual([]);
+    expect(classifyFrame(v11(0), cfg)).toBe('UNCERTAIN');
+  });
+});
+
+describe('transition signals', () => {
+  it('PHONE_SUSPECTED carries the phone score of the last detector tick, not of a face/pose-only tick', () => {
+    const { sm, t } = seated();
+    // detector every 3rd frame: the frame that completes 20 s (frame 40) is a face/pose-only frame
+    const tr = run(sm, t, t + 25 * S, (at, i) => (i % 3 === 0 ? obs(at, 'present', true) : obs(at, 'present')));
+    expect(tr.find((x) => x.reason === 'PHONE_SUSPECTED')!.detectedAt).toBe(t);
+    const sus = tr.find((x) => x.reason === 'PHONE_SUSPECTED')!;
+    expect(sus).toBeDefined();
+    expect(sus.signals).toMatchObject({ phoneDetected: true, phoneScore: 0.8 });
   });
 });

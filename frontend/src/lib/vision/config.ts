@@ -16,6 +16,11 @@ export const MODEL_FILES = {
 
 /** COCO label used by EfficientDet-Lite0 for phones. */
 export const PHONE_CATEGORY = 'cell phone';
+/** COCO label for people (contract v1.2 `personScore`: rejects non-human faces such as pets). */
+export const PERSON_CATEGORY = 'person';
+
+/** Default `personMinScore` (internal; not part of EngineConfig). */
+export const PERSON_MIN_SCORE = 0.5;
 
 /** MediaPipe Pose landmark indices. */
 export const LEFT_SHOULDER = 11;
@@ -31,6 +36,8 @@ export interface VisionSettings {
   poseMinVisibility: number;
   /** Score needed for `phoneDetected`. */
   phoneMinScore: number;
+  /** Score needed for `personDetected` (W1-internal tunable, see bench/vision/RESULTS.md §B). */
+  personMinScore: number;
   /**
    * Detector-internal score floors. Deliberately below the engine thresholds so grey-zone
    * scores are reported (the engine, not the detector, decides PRESENT/ABSENT/UNCERTAIN).
@@ -49,6 +56,7 @@ export function visionSettingsFromConfig(
     modelBaseUrl: `${base}${MODEL_BASE_PATH}`,
     poseMinVisibility: config.poseMinVisibility,
     phoneMinScore: config.phoneMinScore,
+    personMinScore: PERSON_MIN_SCORE,
     faceMinDetectionConfidence: 0.2,
     objectScoreThreshold: 0.2,
   };

@@ -16,7 +16,7 @@
  */
 import type { FrameObservation } from '@/features/monitoring/contracts';
 import type * as TasksVision from '@mediapipe/tasks-vision';
-import { MODEL_FILES, PHONE_CATEGORY, type VisionSettings } from './config';
+import { MODEL_FILES, PERSON_CATEGORY, PHONE_CATEGORY, type VisionSettings } from './config';
 import { FrameQualitySampler } from './frameQuality';
 import { toFrameObservation, type RawVisionResults } from './observation';
 
@@ -57,9 +57,10 @@ export class MediaPipeRunner {
       runner.object = await tasks.ObjectDetector.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: model(MODEL_FILES.object), delegate: 'CPU' },
         runningMode: 'VIDEO',
-        categoryAllowlist: [PHONE_CATEGORY],
+        // person (v1.2 presence corroboration) + phone; maxResults covers several people AND a phone.
+        categoryAllowlist: [PHONE_CATEGORY, PERSON_CATEGORY],
         scoreThreshold: settings.objectScoreThreshold,
-        maxResults: 3,
+        maxResults: 10,
       });
     } catch (e) {
       runner.close();

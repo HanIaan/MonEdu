@@ -28,20 +28,61 @@ export function mergeConfig(config?: Partial<EngineConfig>): EngineConfig {
   };
 }
 
-/** §2 per-frame classification. Head pose / gaze is intentionally not an input. */
-export function classifyFrame(obs: FrameObservation, cfg: EngineConfig): FrameEvidence {
+/**
+ * Person evidence (contract v1.2: COCO "person" from the object detector, which runs at the phone
+ * cadence) is held for this long; older evidence counts as "not known". ≥ the slowest adaptive phone
+ * interval (4 s) so a low-power cadence does not starve the presence rule.
+ */
+export const PERSON_HOLD_MS = 5_000;
+/** A person score this high is human evidence on its own (head down, face and shoulders hidden). */
+export const PERSON_STRONG_SCORE = 0.7;
+/** Default for `personDetected` when a producer reports only `personScore`. */
+const PERSON_MIN_SCORE = 0.5;
+
+export interface PersonEvidence {
+  detected: boolean;
+  score: number;
+}
+
+/** Person evidence carried by this observation itself (undefined fields = not reported). */
+export function personOf(obs: FrameObservation): PersonEvidence | null {
+  if (obs.personDetected === undefined && obs.personScore === undefined) return null;
+  const score = obs.personScore ?? (obs.personDetected ? 1 : 0);
+  return { detected: obs.personDetected ?? score >= PERSON_MIN_SCORE, score };
+}
+
+/**
+ * §2 per-frame classification (v1.2 presence rule, bench/vision/RESULTS.md §B).
+ * Head pose / gaze is intentionally not an input.
+ *  - PRESENT needs human evidence: a recent COCO person detection AND (shoulders visible OR face
+ *    ≥ presenceMinScore OR person score ≥ PERSON_STRONG_SCORE). A face alone never confirms presence
+ *    (pets: BlazeFace 0.71–0.79 on cats/dogs; pose also fires on 15 % of pet photos).
+ *  - ABSENT: no face (< absentMaxScore), no shoulders, and no person detected IN THIS FRAME.
+ *  - UNCERTAIN: anything else — face/shoulders without a person detection (pet, poster, detector not
+ *    run yet), person without face/shoulders below the strong score, grey zone, low quality, error.
+ * `held` = the most recent person evidence (≤ PERSON_HOLD_MS old; the detector runs at the phone
+ * cadence) and only CORROBORATES face/shoulders seen in this frame. A frame with no face and no
+ * shoulders is judged on its own person evidence only, so leaving is not delayed by the hold.
+ */
+export function classifyFrame(obs: FrameObservation, cfg: EngineConfig, held: PersonEvidence | null = personOf(obs)): FrameEvidence {
   if (obs.error || obs.frameQuality !== 'OK') return 'UNCERTAIN';
+  const own = personOf(obs);
   const upperBody = obs.upperBodyDetected || obs.poseScore >= cfg.poseMinVisibility;
-  if (obs.faceScore >= cfg.presenceMinScore || upperBody) return 'PRESENT';
-  if (obs.faceScore < cfg.absentMaxScore) return 'ABSENT';
+  const face = obs.faceScore >= cfg.presenceMinScore;
+  if (obs.faceScore < cfg.absentMaxScore && !upperBody) {
+    if (!own?.detected) return 'ABSENT';
+    return own.score >= PERSON_STRONG_SCORE ? 'PRESENT' : 'UNCERTAIN';
+  }
+  const person = own ?? held;
+  if (person?.detected && (upperBody || face || person.score >= PERSON_STRONG_SCORE)) return 'PRESENT';
   return 'UNCERTAIN';
 }
 
 /** Per-frame confidence that the frame supports its own classification. */
-function frameConfidence(ev: FrameEvidence, obs: FrameObservation): number {
-  const presence = Math.max(obs.faceScore, obs.poseScore);
-  if (ev === 'PRESENT') return clamp01(presence);
-  if (ev === 'ABSENT') return clamp01(1 - presence);
+function frameConfidence(ev: FrameEvidence, obs: FrameObservation, person: PersonEvidence | null): number {
+  const cue = Math.max(obs.faceScore, obs.poseScore);
+  if (ev === 'PRESENT') return clamp01(person ? (cue + person.score) / 2 : cue);
+  if (ev === 'ABSENT') return clamp01(1 - Math.max(cue, person?.score ?? 0));
   return 0.5;
 }
 
@@ -56,6 +97,10 @@ class StateMachineImpl implements StateMachine {
   /** Observations captured at or before this instant are ignored (pause, camera loss, break end). */
   private ignoreUntil = Number.NEGATIVE_INFINITY;
   private lastObs: FrameObservation | null = null;
+  /** Last observation on which the object detector ran (phone signals must come from it, not from a face/pose-only tick). */
+  private lastPhoneObs: FrameObservation | null = null;
+  /** Most recent person evidence (v1.2) and its capture time. */
+  private person: (PersonEvidence & { at: number }) | null = null;
   private pageVisible = true;
   private cameraActive = true;
 
@@ -92,8 +137,12 @@ class StateMachineImpl implements StateMachine {
 
     this.lastFrameAt = obs.at;
     this.lastObs = obs;
-    const ev = classifyFrame(obs, this.cfg);
-    this.presence.update(ev, obs.at, frameConfidence(ev, obs));
+    if (obs.phoneEvaluated) this.lastPhoneObs = obs;
+    const own = personOf(obs);
+    if (own) this.person = { ...own, at: obs.at };
+    const person = this.person && obs.at - this.person.at <= PERSON_HOLD_MS ? this.person : null;
+    const ev = classifyFrame(obs, this.cfg, person);
+    this.presence.update(ev, obs.at, frameConfidence(ev, obs, person));
     if (ev === 'PRESENT' && obs.phoneEvaluated) {
       const isPhone = obs.phoneScore >= this.cfg.phoneMinScore;
       // Baseline is "no phone": a phone run must itself survive the debounce, even on the first sample.
@@ -182,6 +231,8 @@ class StateMachineImpl implements StateMachine {
   }
 
   resetEvidence(): void {
+    this.person = null;
+    this.lastPhoneObs = null;
     this.presence.reset();
     this.phone.reset();
     this.lastFrameAt = null;
@@ -219,10 +270,11 @@ class StateMachineImpl implements StateMachine {
     if (o && this.cameraActive) {
       sig.faceDetected = o.faceDetected;
       sig.upperBodyDetected = o.upperBodyDetected;
-      sig.phoneDetected = o.phoneDetected;
+      const p = this.lastPhoneObs ?? o;
+      sig.phoneDetected = p.phoneDetected;
       sig.faceScore = round2(o.faceScore);
       sig.poseScore = round2(o.poseScore);
-      sig.phoneScore = round2(o.phoneScore);
+      sig.phoneScore = round2(p.phoneScore);
     }
     return sig;
   }

@@ -4,7 +4,7 @@
  * the function.
  */
 import type { FrameObservation } from '@/features/monitoring/contracts';
-import { LEFT_SHOULDER, PHONE_CATEGORY, RIGHT_SHOULDER } from './config';
+import { LEFT_SHOULDER, PERSON_CATEGORY, PHONE_CATEGORY, RIGHT_SHOULDER } from './config';
 
 interface CategoryLike {
   score: number;
@@ -48,17 +48,19 @@ export function shoulderScore(landmarks: LandmarkLike[] | null): number {
   return clamp01(Math.min(l, r));
 }
 
-export function bestPhoneScore(detections: DetectionLike[] | null): number {
+export function bestCategoryScore(detections: DetectionLike[] | null, category: string): number {
   if (!detections) return 0;
   let best = 0;
-  for (const d of detections)
-    for (const c of d.categories) if (c.categoryName === PHONE_CATEGORY) best = Math.max(best, c.score);
+  for (const d of detections) for (const c of d.categories) if (c.categoryName === category) best = Math.max(best, c.score);
   return clamp01(best);
 }
 
+export const bestPhoneScore = (detections: DetectionLike[] | null): number => bestCategoryScore(detections, PHONE_CATEGORY);
+export const bestPersonScore = (detections: DetectionLike[] | null): number => bestCategoryScore(detections, PERSON_CATEGORY);
+
 export function toFrameObservation(
   raw: RawVisionResults,
-  thresholds: { poseMinVisibility: number; phoneMinScore: number },
+  thresholds: { poseMinVisibility: number; phoneMinScore: number; personMinScore?: number },
 ): FrameObservation {
   const faceScore = bestFaceScore(raw.faceDetections);
   const poseScore = shoulderScore(raw.poseLandmarks);
@@ -75,6 +77,12 @@ export function toFrameObservation(
     phoneScore,
     inferenceMs: Math.max(0, raw.inferenceMs),
   };
+  // v1.2: person evidence only exists on ticks where the object detector ran.
+  if (raw.phoneEvaluated && thresholds.personMinScore !== undefined) {
+    const personScore = bestPersonScore(raw.objectDetections);
+    obs.personScore = personScore;
+    obs.personDetected = personScore >= thresholds.personMinScore;
+  }
   if (raw.errors.length > 0) obs.error = raw.errors.join('; ').slice(0, 300);
   return obs;
 }

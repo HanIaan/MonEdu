@@ -63,7 +63,7 @@ class FakePipeline implements VisionPipeline {
   phoneRuns = 0;
   /** ms each analyze takes (fake-timer time). */
   delayMs = 30;
-  scene: (at: number) => Partial<FrameObservation> = () => ({ faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9 });
+  scene: (at: number) => Partial<FrameObservation> = () => ({ faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9, personDetected: true, personScore: 0.9 });
   analyze = vi.fn(async (_src: HTMLVideoElement | ImageBitmap, at: number, opts: { runPhone: boolean }): Promise<FrameObservation> => {
     this.analyzeCalls++;
     if (opts.runPhone) this.phoneRuns++;
