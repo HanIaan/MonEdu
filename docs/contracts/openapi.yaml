@@ -1,0 +1,641 @@
+openapi: 3.1.0
+info:
+  title: Study Monitor API
+  version: 1.0.0
+  description: |
+    Contract-first API for Study Monitor (owner: C0 Coordinator).
+    Changes require a coordinator-approved contract change request.
+
+    Conventions
+    - All timestamps are RFC 3339 / ISO-8601 in UTC with `Z` (e.g. `2026-11-03T00:13:22Z`).
+      Clients render them in Asia/Seoul.
+    - `date` path params are Asia/Seoul local calendar dates (`YYYY-MM-DD`).
+    - Durations are integer seconds.
+    - Errors use RFC 9457 `application/problem+json` with an extra `code` field (see `Problem`).
+    - Auth: `Authorization: Bearer <JWT>` from `POST /api/v1/auth/login`.
+    - No video, image, face crop or embedding is ever sent to this API.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: sessions
+  - name: me
+  - name: teacher
+  - name: stream
+
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/me:
+    get:
+      tags: [me]
+      operationId: getMe
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/study-sessions:
+    post:
+      tags: [sessions]
+      operationId: startStudySession
+      description: |
+        STUDENT only. Starts a new study session. If the student already has an ACTIVE session,
+        the server ends it first (endReason `SESSION_REPLACED`, closed at its `verifiedUntil`)
+        so sessions/intervals never overlap. The new session starts in state `UNKNOWN`
+        (reason `SESSION_STARTED`) until the client engine confirms seating.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartSessionRequest' }
+      responses:
+        '201':
+          description: Session started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudySession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/study-sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [sessions]
+      operationId: getStudySession
+      description: Owner student, or a teacher assigned to the owner.
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudySession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/study-sessions/{sessionId}/transitions:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [sessions]
+      operationId: postTransition
+      description: |
+        Owner STUDENT only. Records one state transition produced by the in-browser engine.
+        See docs/contracts/monitoring-events.md for full semantics.
+        - Idempotent by `eventId`: a retry with the same `eventId` and identical payload returns
+          the original response with `duplicate: true` (HTTP 200). Same `eventId` with a different
+          payload → 409 `EVENT_ID_CONFLICT`.
+        - `seq` must be strictly greater than the session's `lastSeq` (gaps allowed).
+          `seq <= lastSeq` with a new eventId → 409 `SEQ_OUT_OF_ORDER`.
+        - `detectedAt` later than server time + 5s → 400 `CLOCK_SKEW`.
+        - `effectiveAt = max(detectedAt, currentInterval.startedAt, session.startedAt)`; never in the future.
+        - Closing the current interval, opening the new one, updating the session and storing the
+          event happen in ONE transaction.
+        - Transition to the same state as current is accepted and stored as an event but does not
+          split the interval (`intervalChanged: false`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransitionRequest' }
+      responses:
+        '200':
+          description: Accepted (or duplicate replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransitionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/study-sessions/{sessionId}/heartbeat:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [sessions]
+      operationId: postHeartbeat
+      description: |
+        Owner STUDENT only. Default cadence 30s. Updates `lastHeartbeatAt` and (when
+        `cameraActive` is true) `verifiedUntil`. Heartbeats are NOT stored as events.
+        If `cameraActive` is false while the server state is FOCUS_ESTIMATED,
+        DISTRACTION_SUSPECTED or AWAY, the server forces `UNKNOWN` (reason `CAMERA_STOPPED`).
+        If the session was timed out (server set UNKNOWN with `HEARTBEAT_TIMEOUT`), the response
+        has `timedOut: true` and the client must send a fresh transition (reason `RECONNECTED`)
+        to re-establish its state — the heartbeat itself never restores a non-UNKNOWN state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HeartbeatRequest' }
+      responses:
+        '200':
+          description: Heartbeat recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HeartbeatResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/study-sessions/{sessionId}/end:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [sessions]
+      operationId: endStudySession
+      description: |
+        Owner STUDENT only. Closes the open interval at
+        `clamp(endedAt, currentInterval.startedAt, serverNow)` and sets status ENDED.
+        Idempotent: ending an already ENDED session returns 200 with the stored session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EndSessionRequest' }
+      responses:
+        '200':
+          description: Session ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudySession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/me/study-days/{date}:
+    parameters:
+      - $ref: '#/components/parameters/StudyDate'
+    get:
+      tags: [me]
+      operationId: getMyStudyDay
+      description: STUDENT only. Report for the caller's own study day.
+      responses:
+        '200':
+          description: Study day report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudyDayReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/me/stream:
+    get:
+      tags: [stream]
+      operationId: streamMyEvents
+      description: |
+        STUDENT only. Server-Sent Events stream of the caller's own monitoring events.
+        Event name `monitoring`, data = `StreamEvent` JSON. A comment line `: ping` is sent every 25s.
+        Clients connect with `fetch` (to send the Authorization header) and parse `text/event-stream`.
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/StreamEvent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/teacher/students:
+    get:
+      tags: [teacher]
+      operationId: listMyStudents
+      description: TEACHER only. Students assigned to the caller, with live status and today's (Asia/Seoul) summary.
+      responses:
+        '200':
+          description: Assigned students
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TeacherStudentOverview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/teacher/students/{studentId}/study-days/{date}:
+    parameters:
+      - name: studentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: '#/components/parameters/StudyDate'
+    get:
+      tags: [teacher]
+      operationId: getStudentStudyDay
+      description: TEACHER only, and only for an assigned student; otherwise 403 `STUDENT_NOT_ASSIGNED`.
+      responses:
+        '200':
+          description: Study day report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudyDayReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/teacher/stream:
+    get:
+      tags: [stream]
+      operationId: streamTeacherEvents
+      description: |
+        TEACHER only. SSE stream of monitoring events for all students assigned to the caller.
+        Same framing as `/api/v1/me/stream`.
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/StreamEvent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StudyDate:
+      name: date
+      in: path
+      required: true
+      description: Asia/Seoul calendar date
+      schema: { type: string, format: date, example: '2026-11-03' }
+
+  responses:
+    BadRequest:
+      description: Validation failed / clock skew
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid token / bad credentials
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Role or ownership check failed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Sequencing / idempotency / session-state conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Role:
+      type: string
+      enum: [STUDENT, TEACHER]
+
+    ActivityState:
+      type: string
+      description: See docs/contracts/state-machine.md
+      enum: [FOCUS_ESTIMATED, DISTRACTION_SUSPECTED, AWAY, UNKNOWN, BREAK]
+
+    TransitionReason:
+      type: string
+      description: |
+        Client-originated: SEATED_CONFIRMED, FOCUS_RESUMED, PRESENCE_LOST, PHONE_SUSPECTED,
+        LOW_CONFIDENCE, CAMERA_STOPPED, CAMERA_PERMISSION_DENIED, INFERENCE_STALLED, MODEL_ERROR,
+        MONITORING_PAUSED, BREAK_STARTED, BREAK_ENDED, RECONNECTED.
+        Server-originated: SESSION_STARTED, HEARTBEAT_TIMEOUT, SESSION_ENDED, SESSION_REPLACED.
+      enum:
+        - SESSION_STARTED
+        - SEATED_CONFIRMED
+        - FOCUS_RESUMED
+        - PRESENCE_LOST
+        - PHONE_SUSPECTED
+        - LOW_CONFIDENCE
+        - CAMERA_STOPPED
+        - CAMERA_PERMISSION_DENIED
+        - INFERENCE_STALLED
+        - MODEL_ERROR
+        - MONITORING_PAUSED
+        - BREAK_STARTED
+        - BREAK_ENDED
+        - RECONNECTED
+        - HEARTBEAT_TIMEOUT
+        - SESSION_ENDED
+        - SESSION_REPLACED
+
+    SessionStatus:
+      type: string
+      enum: [ACTIVE, ENDED]
+
+    LateStatus:
+      type: string
+      description: |
+        ON_TIME: first seated at or before 09:00 Asia/Seoul. LATE: after 09:00.
+        NOT_SEATED: no seated interval yet on that day.
+      enum: [ON_TIME, LATE, NOT_SEATED]
+
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION_FAILED
+        - BAD_CREDENTIALS
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - STUDENT_NOT_ASSIGNED
+        - NOT_FOUND
+        - SESSION_ENDED
+        - SEQ_OUT_OF_ORDER
+        - EVENT_ID_CONFLICT
+        - CLOCK_SKEW
+        - INTERNAL_ERROR
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, example: 'about:blank' }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        errors:
+          type: array
+          description: Field-level validation errors (VALIDATION_FAILED only)
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+    User:
+      type: object
+      required: [id, email, displayName, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 128 }
+
+    LoginResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, description: Seconds until expiry }
+        user: { $ref: '#/components/schemas/User' }
+
+    StartSessionRequest:
+      type: object
+      required: [clientStartedAt]
+      properties:
+        clientStartedAt:
+          type: string
+          format: date-time
+          description: Client wall clock; informational only. Server uses its own time for startedAt.
+        clientInfo:
+          type: object
+          description: Optional non-identifying runtime info for diagnostics.
+          additionalProperties: false
+          properties:
+            userAgent: { type: string, maxLength: 512 }
+            engineVersion: { type: string, maxLength: 64 }
+            inferenceBackend: { type: string, enum: [WORKER, MAIN_THREAD], description: Where inference runs }
+
+    StudySession:
+      type: object
+      required: [id, studentId, status, studyDate, startedAt, currentState, currentStateSince, lastSeq, heartbeatIntervalSec, heartbeatTimeoutSec]
+      properties:
+        id: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/SessionStatus' }
+        studyDate: { type: string, format: date, description: Asia/Seoul date of startedAt }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+        endReason: { oneOf: [ { $ref: '#/components/schemas/TransitionReason' }, { type: 'null' } ] }
+        currentState: { $ref: '#/components/schemas/ActivityState' }
+        currentStateSince: { type: string, format: date-time }
+        lastSeq: { type: integer, minimum: 0, description: Highest accepted client seq (0 = none) }
+        lastHeartbeatAt: { type: [string, 'null'], format: date-time }
+        verifiedUntil: { type: string, format: date-time, description: Latest time the client is known to have been monitoring }
+        heartbeatIntervalSec: { type: integer, example: 30 }
+        heartbeatTimeoutSec: { type: integer, example: 90 }
+
+    TransitionSignals:
+      type: object
+      description: |
+        Coarse, non-identifying evidence summary at the time of the transition.
+        MUST NOT contain images, landmarks, bounding boxes, or embeddings.
+      additionalProperties: false
+      properties:
+        faceDetected: { type: boolean }
+        upperBodyDetected: { type: boolean }
+        phoneDetected: { type: boolean }
+        faceScore: { type: number, minimum: 0, maximum: 1 }
+        poseScore: { type: number, minimum: 0, maximum: 1 }
+        phoneScore: { type: number, minimum: 0, maximum: 1 }
+        cameraActive: { type: boolean }
+        pageVisible: { type: boolean }
+
+    TransitionRequest:
+      type: object
+      required: [eventId, seq, state, reason, detectedAt]
+      properties:
+        eventId: { type: string, format: uuid, description: Client-generated UUID v4; idempotency key }
+        seq: { type: integer, minimum: 1, description: Strictly increasing per session }
+        state: { $ref: '#/components/schemas/ActivityState' }
+        reason: { $ref: '#/components/schemas/TransitionReason' }
+        detectedAt:
+          type: string
+          format: date-time
+          description: Onset of the evidence (may be up to the threshold duration in the past)
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        signals: { $ref: '#/components/schemas/TransitionSignals' }
+
+    TransitionResponse:
+      type: object
+      required: [eventId, seq, duplicate, serverReceivedAt, effectiveAt, currentState, currentStateSince, intervalChanged]
+      properties:
+        eventId: { type: string, format: uuid }
+        seq: { type: integer }
+        duplicate: { type: boolean, description: True when this is a replay of an already-stored eventId }
+        serverReceivedAt: { type: string, format: date-time }
+        effectiveAt: { type: string, format: date-time, description: Time the server applied the transition from }
+        currentState: { $ref: '#/components/schemas/ActivityState' }
+        currentStateSince: { type: string, format: date-time }
+        intervalChanged: { type: boolean }
+
+    HeartbeatRequest:
+      type: object
+      required: [sentAt, clientState, cameraActive, pageVisible, lastSeq]
+      properties:
+        sentAt: { type: string, format: date-time }
+        clientState: { $ref: '#/components/schemas/ActivityState' }
+        cameraActive: { type: boolean }
+        pageVisible: { type: boolean }
+        lastSeq: { type: integer, minimum: 0, description: Highest seq the client has generated }
+
+    HeartbeatResponse:
+      type: object
+      required: [serverTime, currentState, currentStateSince, lastSeq, timedOut, heartbeatIntervalSec]
+      properties:
+        serverTime: { type: string, format: date-time }
+        currentState: { $ref: '#/components/schemas/ActivityState' }
+        currentStateSince: { type: string, format: date-time }
+        lastSeq: { type: integer, description: Highest seq the server has accepted }
+        timedOut: { type: boolean, description: True if current UNKNOWN was caused by HEARTBEAT_TIMEOUT }
+        heartbeatIntervalSec: { type: integer }
+
+    EndSessionRequest:
+      type: object
+      required: [endedAt]
+      properties:
+        endedAt: { type: string, format: date-time }
+
+    StateTotals:
+      type: object
+      required: [focusSeconds, distractionSeconds, awaySeconds, unknownSeconds, breakSeconds]
+      properties:
+        focusSeconds: { type: integer, minimum: 0 }
+        distractionSeconds: { type: integer, minimum: 0 }
+        awaySeconds: { type: integer, minimum: 0 }
+        unknownSeconds: { type: integer, minimum: 0 }
+        breakSeconds: { type: integer, minimum: 0 }
+
+    ActivityInterval:
+      type: object
+      required: [id, sessionId, state, reason, startedAt, durationSeconds, open]
+      properties:
+        id: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/ActivityState' }
+        reason: { $ref: '#/components/schemas/TransitionReason', description: Reason that opened this interval }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time, description: null while open }
+        durationSeconds: { type: integer, minimum: 0, description: For open intervals, measured to liveEnd (see state-machine.md §5) }
+        open: { type: boolean }
+
+    SessionSummary:
+      type: object
+      required: [id, status, startedAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/SessionStatus' }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+        endReason: { oneOf: [ { $ref: '#/components/schemas/TransitionReason' }, { type: 'null' } ] }
+
+    StudyDayReport:
+      type: object
+      required: [studentId, date, timezone, referenceTime, lateStatus, totals, currentStreakSeconds, longestStreakSeconds, sessions, intervals, computedAt]
+      properties:
+        studentId: { type: string, format: uuid }
+        studentName: { type: string }
+        date: { type: string, format: date }
+        timezone: { type: string, enum: [Asia/Seoul] }
+        referenceTime: { type: string, format: date-time, description: '09:00 Asia/Seoul of `date`, in UTC' }
+        firstSeatedAt: { type: [string, 'null'], format: date-time }
+        lateSeconds: { type: [integer, 'null'], minimum: 0, description: 'max(0, firstSeatedAt - referenceTime); null when NOT_SEATED' }
+        lateStatus: { $ref: '#/components/schemas/LateStatus' }
+        totals: { $ref: '#/components/schemas/StateTotals' }
+        currentStreakSeconds: { type: integer, minimum: 0 }
+        longestStreakSeconds: { type: integer, minimum: 0 }
+        currentState: { oneOf: [ { $ref: '#/components/schemas/ActivityState' }, { type: 'null' } ], description: null when no ACTIVE session }
+        currentStateSince: { type: [string, 'null'], format: date-time }
+        activeSessionId: { type: [string, 'null'], format: uuid }
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/SessionSummary' }
+        intervals:
+          type: array
+          description: Ordered by startedAt ascending
+          items: { $ref: '#/components/schemas/ActivityInterval' }
+        computedAt: { type: string, format: date-time }
+
+    TeacherStudentOverview:
+      type: object
+      required: [student, today]
+      properties:
+        student: { $ref: '#/components/schemas/User' }
+        activeSessionId: { type: [string, 'null'], format: uuid }
+        currentState: { oneOf: [ { $ref: '#/components/schemas/ActivityState' }, { type: 'null' } ] }
+        currentStateSince: { type: [string, 'null'], format: date-time }
+        lastHeartbeatAt: { type: [string, 'null'], format: date-time }
+        today:
+          type: object
+          required: [date, lateStatus, totals, currentStreakSeconds, longestStreakSeconds]
+          properties:
+            date: { type: string, format: date }
+            firstSeatedAt: { type: [string, 'null'], format: date-time }
+            lateSeconds: { type: [integer, 'null'] }
+            lateStatus: { $ref: '#/components/schemas/LateStatus' }
+            totals: { $ref: '#/components/schemas/StateTotals' }
+            currentStreakSeconds: { type: integer }
+            longestStreakSeconds: { type: integer }
+
+    StreamEventType:
+      type: string
+      enum: [STATE_CHANGED, SESSION_STARTED, SESSION_ENDED]
+
+    StreamEvent:
+      type: object
+      description: |
+        SSE `data:` payload for event name `monitoring`. SSE `id:` = server event UUID.
+        Consumers should refetch the study-day report on receipt (events are notifications, not the
+        source of truth).
+      required: [type, studentId, sessionId, state, reason, at]
+      properties:
+        type: { $ref: '#/components/schemas/StreamEventType' }
+        studentId: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/ActivityState' }
+        reason: { $ref: '#/components/schemas/TransitionReason' }
+        at: { type: string, format: date-time, description: effectiveAt of the change }

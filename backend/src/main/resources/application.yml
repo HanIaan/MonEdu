@@ -1,0 +1,55 @@
+# Owner: W2 (backend). All secrets/config via environment variables — see /.env.example.
+spring:
+  application:
+    name: study-monitor-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/study_monitor}
+    username: ${DB_USERNAME:study_monitor}
+    password: ${DB_PASSWORD:study_monitor}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
+  jackson:
+    time-zone: UTC
+  mvc:
+    async:
+      request-timeout: -1
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:}
+    ttl: ${JWT_TTL:PT12H}
+    issuer: study-monitor
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  seed-demo-data: ${SEED_DEMO_DATA:false}
+  monitoring:
+    heartbeat-interval: PT30S
+    heartbeat-timeout: PT90S
+    timeout-scan-interval: PT10S
+    max-future-skew: PT5S
+    live-end-grace: PT45S
+    sse-ping-interval: PT25S
+  time-zone: Asia/Seoul
+  late-reference-time: "09:00"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+springdoc:
+  api-docs:
+    path: /v3/api-docs
