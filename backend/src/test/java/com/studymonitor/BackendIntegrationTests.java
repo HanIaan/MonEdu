@@ -407,4 +407,124 @@ class BackendIntegrationTests {
         assertThatThrownBy(() -> new SecurityConfig().jwtKey(new AppConfig.JwtSettings("too-short",Duration.ofHours(1),"study-monitor")))
             .isInstanceOf(IllegalStateException.class).hasMessageContaining("at least 32 UTF-8 bytes");
     }
+
+    @Autowired org.springframework.security.oauth2.jwt.JwtEncoder jwtEncoder;
+
+    String signedToken(Instant expiry, String issuer, Instant notBefore) {
+        var claims=org.springframework.security.oauth2.jwt.JwtClaimsSet.builder()
+            .subject(STUDENT.toString()).issuer(issuer).issuedAt(clock.instant().minusSeconds(3600))
+            .claim("role","STUDENT");
+        if(expiry!=null) claims.expiresAt(expiry);
+        if(notBefore!=null) claims.notBefore(notBefore);
+        return jwtEncoder.encode(org.springframework.security.oauth2.jwt.JwtEncoderParameters.from(
+            org.springframework.security.oauth2.jwt.JwsHeader.with(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256).build(),
+            claims.build())).getTokenValue();
+    }
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"tampered","expired","none","issuer","no-expiry","not-before"})
+    void jwtSecurityRegression(String kind) throws Exception {
+        String invalid=switch(kind) {
+            case "tampered" -> {
+                String[] parts=studentToken.split("\\.");
+                String claims=new String(Base64.getUrlDecoder().decode(parts[1]),java.nio.charset.StandardCharsets.UTF_8);
+                parts[1]=Base64.getUrlEncoder().withoutPadding().encodeToString(claims.replace(STUDENT.toString(),TEACHER.toString()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                yield String.join(".",parts);
+            }
+            case "expired" -> signedToken(clock.instant().minusSeconds(61),"study-monitor",null);
+            case "none" -> Base64.getUrlEncoder().withoutPadding().encodeToString("{\"alg\":\"none\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8))+"."+studentToken.split("\\.")[1]+".";
+            case "issuer" -> signedToken(clock.instant().plusSeconds(3600),"attacker",null);
+            case "no-expiry" -> signedToken(null,"study-monitor",null);
+            case "not-before" -> signedToken(clock.instant().plusSeconds(7200),"study-monitor",clock.instant().plusSeconds(120));
+            default -> throw new IllegalArgumentException(kind);
+        };
+        mvc.perform(get("/api/v1/me").header("Authorization","Bearer "+invalid))
+            .andExpect(status().isUnauthorized()).andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"transition","heartbeat","end"})
+    void everyMutationRejectsCrossStudentAndTeacher(String operation) throws Exception {
+        Session s=start();
+        String suffix=switch(operation) { case "transition" -> "transitions"; default -> operation; };
+        Object payload=switch(operation) {
+            case "transition" -> request(1,State.AWAY,Reason.PRESENCE_LOST,clock.instant());
+            case "heartbeat" -> new HeartbeatRequest(clock.instant(),State.UNKNOWN,true,true,0L);
+            default -> new EndRequest(clock.instant());
+        };
+        for(String jwt:List.of(token("student2@demo.local"),teacherToken,teacher2Token)) {
+            postJson("/api/v1/study-sessions/"+s.id()+"/"+suffix,jwt,payload)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        }
+        assertThat(sessions.get(STUDENT,s.id()).lastSeq()).isZero();
+        assertThat(sessions.get(STUDENT,s.id()).status()).isEqualTo(Status.ACTIVE);
+        assertThat(count("monitoring_events")).isEqualTo(1);
+    }
+    @Test void streamRolesAndCrossStudentReportAreForbidden() throws Exception {
+        mvc.perform(get("/api/v1/me/stream").header("Authorization","Bearer "+teacherToken)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/teacher/stream").header("Authorization","Bearer "+studentToken)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/teacher/students/"+STUDENT2+"/study-days/"+DATE).header("Authorization","Bearer "+studentToken))
+            .andExpect(status().isForbidden());
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"seq-zero","missing-state","unknown-state","confidence","signal-score","media","server-reason"})
+    void invalidEventsNeverMutateSession(String kind) throws Exception {
+        Session s=start();
+        var payload=new HashMap<String,Object>();
+        payload.put("eventId",UUID.randomUUID()); payload.put("seq",1); payload.put("state","AWAY");
+        payload.put("reason","PRESENCE_LOST"); payload.put("detectedAt",clock.instant().toString());
+        switch(kind) {
+            case "seq-zero" -> payload.put("seq",0);
+            case "missing-state" -> payload.remove("state");
+            case "unknown-state" -> payload.put("state","FOCUSED");
+            case "confidence" -> payload.put("confidence",1.01);
+            case "signal-score" -> payload.put("signals",Map.of("faceScore",-0.01));
+            case "media" -> payload.put("signals",Map.of("image","forbidden"));
+            case "server-reason" -> payload.put("reason","HEARTBEAT_TIMEOUT");
+        }
+        postJson("/api/v1/study-sessions/"+s.id()+"/transitions",studentToken,payload)
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        assertThat(sessions.get(STUDENT,s.id()).lastSeq()).isZero();
+        assertThat(count("monitoring_events")).isEqualTo(1);
+    }
+    @Test void farPastOnsetCannotRewriteCurrentIntervalOrInflateFocus() throws Exception {
+        Session s=start(); clock.advance(10); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
+        clock.advance(20); change(s,2,State.UNKNOWN,Reason.CAMERA_STOPPED);
+        clock.advance(20);
+        var result=postJson("/api/v1/study-sessions/"+s.id()+"/transitions",studentToken,
+            request(3,State.FOCUS_ESTIMATED,Reason.RECONNECTED,Instant.parse("1970-01-01T00:00:00Z")))
+            .andExpect(status().isOk()).andReturn();
+        assertThat(Instant.parse(body(result).get("effectiveAt").asText())).isEqualTo(s.startedAt().plusSeconds(30));
+        clock.advance(100); scheduler.scan();
+        assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(20);
+        assertThat(jdbc.queryForObject("select min(started_at) from activity_intervals where session_id=?",java.sql.Timestamp.class,s.id()).toInstant()).isEqualTo(s.startedAt());
+    }
+    @Test void cameraStopAndSilentClientNeverAddFocusAfterFinalVerification() {
+        Session s=start(); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
+        clock.advance(30); heartbeat(s,true); clock.advance(10); heartbeat(s,false);
+        Instant stopped=clock.instant(); clock.advance(3600); scheduler.scan();
+        assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(40);
+        assertThat(sessions.get(STUDENT,s.id()).verifiedUntil()).isEqualTo(stopped);
+        Session next=start(); change(next,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
+        clock.advance(30); heartbeat(next,true); Instant verified=clock.instant();
+        clock.advance(46); assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(70);
+        clock.advance(3600); scheduler.scan();
+        assertThat(reports.mine(STUDENT,DATE).totals().focusSeconds()).isEqualTo(70);
+        assertThat(sessions.get(STUDENT,next.id()).currentStateSince()).isEqualTo(verified);
+    }
+    @Test void concurrentDistinctEventsWithSameSequenceHaveOneWinner() throws Exception {
+        Session s=start(); clock.advance(10);
+        var gate=new CountDownLatch(1);
+        try(var executor=Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<Integer>> results=new ArrayList<>();
+            for(int i=0;i<20;i++) results.add(executor.submit(()->{
+                gate.await();
+                return postJson("/api/v1/study-sessions/"+s.id()+"/transitions",studentToken,
+                    request(1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED,clock.instant())).andReturn().getResponse().getStatus();
+            }));
+            gate.countDown(); List<Integer> statuses=new ArrayList<>();
+            for(var result:results) statuses.add(result.get(20,TimeUnit.SECONDS));
+            assertThat(statuses.stream().filter(code->code==200).count()).isEqualTo(1);
+            assertThat(statuses.stream().filter(code->code==409).count()).isEqualTo(19);
+        }
+        assertThat(count("monitoring_events")).isEqualTo(2);
+        assertThat(sessions.get(STUDENT,s.id()).lastSeq()).isEqualTo(1);
+    }
 }
