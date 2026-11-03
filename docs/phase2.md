@@ -60,6 +60,6 @@ No remote push / PR / deployment without explicit user approval.
 - E2E, one full run (production build): **36/36** — api 8, ui 6, camera-person 12 (incl. phone, pets,
   frozen frames, heartbeat-loss + outage stays UNKNOWN, preview parity, 5-min soak), camera-nobody 1,
   camera-denied 1, WebKit engine 8 (incl. phone, pets)
-- 30-min soak ✓ (see limitations.md); 2-hour soak started after the E2E run
+- 30-min soak ✓; 2-hour soak ✓ (passed, 120 min: CPU/fps/p95 flat, heap +0.25 MB, listeners constant, 0 frame gaps, accounting exact — see limitations.md)
 - Not covered: real Safari.app (checklist: `docs/safari-manual-checklist.md`), real webcams, Firefox,
   low-end hardware, >1,000 users

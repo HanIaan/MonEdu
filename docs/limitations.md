@@ -153,4 +153,26 @@ The GPU-process share is largely the synthetic canvas camera (640×480 redraw + 
 a real webcam has a different (unmeasured) capture cost. Compared with Phase 1's 5-min soak (dev build,
 heap 12.6 → 13.0 MB, listeners 665, main thread 15.8 % measured under load) the production build uses
 about half the heap and fewer listeners; the main-thread figures are not comparable (see
-`docs/testing.md` → Measurement notes). **Not run:** 2-hour soak, real webcam, low-end hardware.
+`docs/testing.md` → Measurement notes).
+
+### 2-hour soak — same setup (`SOAK_MINUTES=120`), 2026-11-04 00:55–02:57 KST, test passed
+Load average 1.0–9.1 (mean 2.6; other agents were working on the machine during the last 15 min).
+
+| Metric | 30 min | 2 h (mean of 119 samples) | Change |
+|---|---|---|---|
+| Whole-browser CPU | 30.7 % | 30.9 % (27.5–33.0) | none |
+| Renderer / main thread / AI worker (derived) | 11.2 / 1.0 / ≈ 10.2 % | 11.1 / 1.0 / ≈ 10.1 % | none |
+| Inference fps / mean / p95 | 2.0 / 42.8 / 74.9 ms | 2.0 (1.91–2.07) / 42.7 / 74.3 ms; per-30-min p95 75.7 → 75.1 → 73.9 → 72.9 | none; low-power never engaged |
+| JS heap | 6.29 → 6.43 MB | 6.41 → 6.66 MB (max 6.69); per-30-min mean 6.47 / 6.53 / 6.58 / 6.64 | +0.25 MB in 2 h (≈ 0.12 MB/h) |
+| Browser RSS | 491 → 452 MB | 493 → 433 MB (420–520) | no growth |
+| Listeners | 378 | 378 (378–381) | none |
+| DOM nodes | 996 → 1092 | 1164 → 1692 | +24 nodes per state change (22 changes) — grows with the number of intervals on the timeline, not with time |
+| Frame gaps > 2 s | 0 (max 508 ms) | 0 (max 511 ms) | none |
+| Heartbeat p50/p95/p99 | 14 / 24 / 46 ms (n=61) | 11 / 18 / 25 ms (n=241, max 86) | — |
+| Transitions p95 / day report p95 | 38 / 32 ms | 42 / 30 ms | — |
+| Accounting | focus 1715 + away 90 s | focus 6716 + away 495 + unknown 0 = 7211 s vs 7208 s elapsed; away = scripted 11 × 45 s exactly | exact |
+
+Reading: no leak or drift over 2 h. Heap grows slowly and DOM nodes grow by state change. Both match
+the timeline holding more intervals. A study day with hundreds of state changes would therefore render
+thousands of timeline nodes. This has **not been measured**; segment merging or virtualisation is a
+next-phase candidate. **Not run:** real webcam, low-end hardware, real Safari.
