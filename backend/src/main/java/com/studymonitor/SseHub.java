@@ -30,7 +30,14 @@ public class SseHub {
     }
     private void send(UUID user,SseEmitter emitter,SseEmitter.SseEventBuilder data) {
         try { synchronized(emitter) { emitter.send(data); } }
-        catch(Exception e) { remove(user,emitter); emitter.completeWithError(e); }
+        catch(Exception e) {
+            remove(user,emitter);
+            try { emitter.completeWithError(e); }
+            catch(IllegalStateException alreadyClosed) {
+                // Tomcat may have already delivered onError and invalidated the async context.
+                // One dead socket must not abort delivery to the remaining subscribers.
+            }
+        }
     }
     @TransactionalEventListener(phase=TransactionPhase.AFTER_COMMIT)
     public void publish(Published event) {

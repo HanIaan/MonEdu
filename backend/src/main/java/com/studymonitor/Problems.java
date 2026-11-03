@@ -52,6 +52,11 @@ public class Problems {
     ResponseEntity<ProblemDetail> denied(Exception e,HttpServletRequest request) { return response(detail(HttpStatus.FORBIDDEN,"FORBIDDEN","Access denied"),request); }
     @ExceptionHandler({NoHandlerFoundException.class,NoResourceFoundException.class})
     ResponseEntity<ProblemDetail> missing(Exception e,HttpServletRequest request) { return response(detail(HttpStatus.NOT_FOUND,"NOT_FOUND","Resource not found"),request); }
+    @ExceptionHandler(org.springframework.web.context.request.async.AsyncRequestNotUsableException.class)
+    void disconnected() {
+        // The SSE transport is already gone. Writing ProblemDetail would fail again and turn
+        // an ordinary client disconnect into an error log and a second converter exception.
+    }
     @ExceptionHandler(Exception.class)
     ResponseEntity<ProblemDetail> unexpected(Exception e,HttpServletRequest request) {
         org.slf4j.LoggerFactory.getLogger(Problems.class).error("Unhandled backend error ({})",e.getClass().getName());

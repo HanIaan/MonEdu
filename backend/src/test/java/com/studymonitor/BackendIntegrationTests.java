@@ -574,4 +574,22 @@ class BackendIntegrationTests {
         assertThat(fresh.events().getLast().state()).isEqualTo(State.AWAY);
         fresh.completion.run(); assertThat(streams.subscriberCount()).isZero();
     }
+
+    @Test void alreadyInvalidAsyncContextCannotAbortFanoutToReconnectedSubscriber() {
+        var dead=new SseEmitter() {
+            int sends;
+            @Override public void send(SseEventBuilder builder) throws java.io.IOException {
+                if(sends++>0) throw new java.io.IOException("socket lost after handshake");
+            }
+            @Override public void completeWithError(Throwable error) { throw new IllegalStateException("async context already invalid"); }
+        };
+        var fresh=new RecordingEmitter();
+        streams.register(STUDENT,dead); streams.register(STUDENT,fresh);
+        var event=new StreamEvent(EventType.SESSION_STARTED,STUDENT,UUID.randomUUID(),State.UNKNOWN,Reason.SESSION_STARTED,clock.instant());
+        assertThatCode(() -> streams.publish(new SseHub.Published(UUID.randomUUID(),event,Set.of(STUDENT)))).doesNotThrowAnyException();
+        assertThat(streams.subscriberCount()).isEqualTo(1);
+        assertThat(fresh.events()).containsExactly(event);
+        start();
+        assertThat(fresh.events()).hasSize(2);
+    }
 }
