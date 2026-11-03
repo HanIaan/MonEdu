@@ -63,7 +63,7 @@ class FakePipeline implements VisionPipeline {
   phoneRuns = 0;
   /** ms each analyze takes (fake-timer time). */
   delayMs = 30;
-  scene: (at: number) => Partial<FrameObservation> = () => ({ faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9 });
+  scene: (at: number) => Partial<FrameObservation> = () => ({ faceDetected: true, faceScore: 0.9, upperBodyDetected: true, poseScore: 0.9, personDetected: true, personScore: 0.9 });
   analyze = vi.fn(async (_src: HTMLVideoElement | ImageBitmap, at: number, opts: { runPhone: boolean }): Promise<FrameObservation> => {
     this.analyzeCalls++;
     if (opts.runPhone) this.phoneRuns++;
@@ -341,6 +341,142 @@ describe('MonitoringController', () => {
     expect(track.stop).toHaveBeenCalled();
     ctrl.dispose();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('v1.2 lastReason: null before the first transition, then the most recent reason', async () => {
+    const { ctrl, videoEl, track } = setup();
+    expect(ctrl.getSnapshot().lastReason).toBeNull();
+    await ctrl.start(videoEl);
+    expect(ctrl.getSnapshot().lastReason).toBeNull();
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(ctrl.getSnapshot().lastReason).toBe('SEATED_CONFIRMED');
+    ctrl.startBreak();
+    expect(ctrl.getSnapshot().lastReason).toBe('BREAK_STARTED');
+    ctrl.endBreak();
+    expect(ctrl.getSnapshot().lastReason).toBe('BREAK_ENDED');
+    await vi.advanceTimersByTimeAsync(16_000);
+    track.fire('ended');
+    expect(ctrl.getSnapshot()).toMatchObject({ engineState: 'UNKNOWN', lastReason: 'CAMERA_STOPPED' });
+    ctrl.dispose();
+  });
+
+  describe('adaptive cadence (contract v1.2 perf fields)', () => {
+    it('cheap inference: configured cadence, perf fields populated, not low-power', async () => {
+      const { ctrl, videoEl } = setup();
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(ctrl.getSnapshot().perf).toMatchObject({
+        p95InferenceMs: 30,
+        effectiveIntervalMs: 500,
+        effectivePhoneIntervalMs: 1000,
+        lowPower: false,
+        framesDropped: 0,
+      });
+      ctrl.dispose();
+    });
+
+    it('slow device: slows down, never overlaps, seating accounting unchanged; recovers when load falls', async () => {
+      const { ctrl, videoEl, pipeline, transitions } = setup();
+      pipeline.delayMs = 400; // 80 % of the 500 ms interval
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(16_500);
+      // Seating is elapsed-time based: confirmed after 15 s of evidence, back-dated to the first frame.
+      expect(transitions[0]).toMatchObject({ reason: 'SEATED_CONFIRMED', detectedAt: T0 });
+      await vi.advanceTimersByTimeAsync(40_000);
+      let perf = ctrl.getSnapshot().perf;
+      expect(perf.lowPower).toBe(true);
+      expect(perf.effectiveIntervalMs).toBeGreaterThanOrEqual(1000); // 400 ≤ 0.4 · interval
+      expect(perf.effectivePhoneIntervalMs).toBe(perf.effectiveIntervalMs! * 2);
+      expect(perf.p95InferenceMs).toBe(400);
+      expect(pipeline.maxInFlight).toBe(1);
+      // fewer inferences per second than at full cadence
+      const n0 = pipeline.analyzeCalls;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(pipeline.analyzeCalls - n0).toBeLessThanOrEqual(11);
+
+      pipeline.delayMs = 20; // load gone (e.g. other tab closed)
+      await vi.advanceTimersByTimeAsync(90_000);
+      perf = ctrl.getSnapshot().perf;
+      expect(perf.lowPower).toBe(false);
+      expect(perf.effectiveIntervalMs).toBe(500);
+      expect(perf.effectivePhoneIntervalMs).toBe(1000);
+      expect(ctrl.getSnapshot().engineState).toBe('FOCUS_ESTIMATED'); // no spurious transition while adapting
+      expect(transitions).toHaveLength(1);
+      ctrl.dispose();
+    });
+
+    it('presence lost is still detected after awayMs of elapsed time at the slowest cadence', async () => {
+      const { ctrl, videoEl, pipeline, transitions } = setup();
+      pipeline.delayMs = 1_500;
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(ctrl.getSnapshot().perf.effectiveIntervalMs).toBe(2_000);
+      expect(transitions.at(-1)).toMatchObject({ reason: 'SEATED_CONFIRMED' });
+      const leftAt = Date.now();
+      pipeline.scene = () => ({ faceDetected: false, faceScore: 0, upperBodyDetected: false, poseScore: 0 });
+      await vi.advanceTimersByTimeAsync(40_000);
+      const away = transitions.find((t) => t.reason === 'PRESENCE_LOST')!;
+      expect(away).toBeDefined();
+      // onset = first ABSENT frame, i.e. within one interval + one inference of leaving
+      expect(away.detectedAt).toBeGreaterThanOrEqual(leftAt);
+      expect(away.detectedAt).toBeLessThanOrEqual(leftAt + 2_000 + 1_500);
+      expect(transitions.some((t) => t.reason === 'INFERENCE_STALLED')).toBe(false);
+      ctrl.dispose();
+    });
+
+    it('adaptiveCadence: false keeps the configured intervals (telemetry still reported)', async () => {
+      const { ctrl, videoEl, pipeline } = setup({ adaptiveCadence: false });
+      pipeline.delayMs = 400;
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(ctrl.getSnapshot().perf).toMatchObject({ effectiveIntervalMs: 500, lowPower: false, p95InferenceMs: 400 });
+      ctrl.dispose();
+    });
+
+    it('frozen video: stale ticks are counted as framesDropped', async () => {
+      const { ctrl, videoEl, video } = setup();
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(ctrl.getSnapshot().perf.framesDropped).toBe(0);
+      video.freeze();
+      await vi.advanceTimersByTimeAsync(3_000);
+      const d = ctrl.getSnapshot().perf.framesDropped!;
+      expect(d).toBeGreaterThanOrEqual(5);
+      expect(d).toBeLessThanOrEqual(6);
+      ctrl.dispose();
+    });
+
+    it('a result that arrives after pause is dropped, not applied', async () => {
+      const { ctrl, videoEl, pipeline } = setup();
+      pipeline.delayMs = 300;
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(100); // first inference in flight
+      ctrl.pause();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(ctrl.getSnapshot()).toMatchObject({ lastObservation: null, perf: { framesProcessed: 0, framesDropped: 1 } });
+      ctrl.dispose();
+    });
+
+    it('dispose while slowed down releases timers, rVFC, pipeline', async () => {
+      const { ctrl, videoEl, video, pipeline } = setup();
+      const cancel = vi.fn();
+      let cb: (() => void) | null = null;
+      Object.assign(video, {
+        requestVideoFrameCallback: vi.fn((f: () => void) => ((cb = f), 3)),
+        cancelVideoFrameCallback: cancel,
+      });
+      const present = setInterval(() => cb?.(), 66);
+      pipeline.delayMs = 600;
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(ctrl.getSnapshot().perf.lowPower).toBe(true);
+      clearInterval(present);
+      ctrl.dispose();
+      expect(cancel).toHaveBeenCalledWith(3);
+      expect(pipeline.dispose).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1_000); // flush the fake analyze() delay
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   describe('frame freshness (hidden 2x2 analysis video may stop delivering frames)', () => {

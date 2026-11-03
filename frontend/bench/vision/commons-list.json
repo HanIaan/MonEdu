@@ -1,0 +1,33 @@
+{
+ "note": "Hand-picked Wikimedia Commons photos for webcam-like desk scenes. Labels are W1's visual judgement after viewing a contact sheet (not verified annotations). fetch-commons.mjs resolves license + author via the Commons API and downloads only freely licensed files.",
+ "items": [
+  {"title": "Smiling woman with a phone (Unsplash).jpg", "situation": "phone_in_hand", "phone": true, "person": true},
+  {"title": "Middle-aged woman using a smartphone with laptop.jpg", "situation": "phone_in_hand", "phone": true, "person": true, "note": "top-down, hands + phone only, no face"},
+  {"title": "Middle-aged woman using a smartphone at home closeup.jpg", "situation": "phone_in_hand", "phone": true, "person": true, "note": "torso + hands, no face"},
+  {"title": "Close-up of a woman using her smartphone while having coffee.jpg", "situation": "phone_in_hand", "phone": true, "person": true, "note": "hands + phone at table edge, no face"},
+  {"title": "Woman holds a cushion while using her smartphone at home.jpg", "situation": "phone_in_hand", "phone": true, "person": true},
+  {"title": "Young business woman with curly hair in uniform using smartphone at home. (51487906519).jpg", "situation": "phone_in_hand", "phone": true, "person": true},
+  {"title": "Woman using an iPhone.jpg", "situation": "phone_in_hand", "phone": true, "person": true, "note": "hands + phone only, no face"},
+  {"title": "Teen girl texting close-up.jpg", "situation": "phone_in_hand", "phone": true, "person": true, "note": "hands + phone on lap, no face"},
+  {"title": "Texting on cell phone.jpg", "situation": "phone_in_hand", "phone": true, "person": true},
+  {"title": "Ranger Nico Using Phone for iNaturalist (51984949226).jpg", "situation": "phone_in_hand", "phone": true, "person": true},
+  {"title": "Mobile phone overuse.jpg", "situation": "phone_in_hand", "phone": true, "person": true, "note": "4 people standing, phones held at chest"},
+  {"title": "Female student writing and studying at dorm room desk.jpg", "situation": "head_down_writing", "phone": false, "person": true},
+  {"title": "Woman writing on a notebook with a pen.jpg", "situation": "head_down_writing", "phone": false, "person": true, "note": "hands + notebook only, no face"},
+  {"title": "Businesswoman writing in a notebook closeup.jpg", "situation": "head_down_writing", "phone": false, "person": true, "note": "hands + notebook, torso, no face"},
+  {"title": "Student on the desk.jpg", "situation": "reading_seated", "phone": false, "person": true},
+  {"title": "Dr. Hugh L. Dryden seated at desk (4940324481).jpg", "situation": "reading_seated", "phone": false, "person": true},
+  {"title": "Public Library Bhiswa – Students Reading.jpg", "situation": "reading_seated", "phone": false, "person": true, "note": "several small, distant people"},
+  {"title": "Young woman in leather jacket (Unsplash).jpg", "situation": "upper_body_profile", "phone": false, "person": true, "note": "backlit profile, face turned away"},
+  {"title": "Sleeping on a Desk.jpg", "situation": "head_on_desk_sleeping", "phone": false, "person": true, "note": "painting/drawing, not a photo", "artwork": true},
+  {"title": "Sleeping students.jpg", "situation": "head_on_desk_sleeping", "phone": false, "person": true},
+  {"title": "Asleep on a study desk (2341911944).jpg", "situation": "head_on_desk_sleeping", "phone": false, "person": true},
+  {"title": "Asleep at the Desk.jpg", "situation": "excluded_cartoon", "phone": false, "person": true, "exclude": true, "note": "cartoon illustration; excluded from all metrics"},
+  {"title": "He IS SLEEPING his worktime!!! (6890836804).jpg", "situation": "pet_only", "phone": false, "person": false, "note": "actually a cat sleeping next to a cash register"},
+  {"title": "Closed Eyes (Unsplash).jpg", "situation": "eyes_closed_seated", "phone": false, "person": true},
+  {"title": "A bearded man, head and shoulders, with his eyes closed. Pho Wellcome V0029461.jpg", "situation": "eyes_closed_seated", "phone": false, "person": true, "note": "historic photograph"},
+  {"title": "Mimi sleeping on the desk (2849255071).jpg", "situation": "pet_only", "phone": false, "person": false},
+  {"title": "2022-04-15 14 16 57 A calico cat sleeping on an desk in the Franklin Farm section of Oak Hill, Fairfax County, Virginia.jpg", "situation": "pet_only", "phone": false, "person": false},
+  {"title": "Bookstand with desk lamp.jpg", "situation": "empty_desk", "phone": false, "person": false}
+ ]
+}
