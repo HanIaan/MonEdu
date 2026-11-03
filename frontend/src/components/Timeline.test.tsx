@@ -46,4 +46,25 @@ describe('Timeline', () => {
     render(<Timeline intervals={[]} computedAt="2026-11-03T01:00:00Z" />);
     expect(screen.getByTestId('timeline')).toHaveTextContent('활동 구간이 없습니다');
   });
+
+  it('labels the axis as Asia/Seoul (KST)', () => {
+    renderTimeline();
+    expect(screen.getByText('Asia/Seoul (KST)')).toBeInTheDocument();
+    expect(screen.getAllByText('09:00:00').length).toBeGreaterThan(0);
+  });
+
+  it('renders a labelled legend so colour is never the only signal', () => {
+    renderTimeline();
+    const legend = screen.getByTestId('timeline-legend');
+    expect(legend).toHaveTextContent('범례');
+    for (const label of ['집중 추정', '비집중 의심', '자리비움', '측정 불가', '휴식']) {
+      expect(within(legend).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it('includes the transition reason in the segment tooltip', () => {
+    renderTimeline();
+    const segments = screen.getAllByTestId('timeline-segment');
+    expect(segments[0]).toHaveAttribute('aria-label', expect.stringContaining('착석 확인'));
+  });
 });

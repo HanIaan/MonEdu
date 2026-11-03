@@ -119,6 +119,8 @@ export function LiveStats({ values, sync, className = '' }: LiveStatsProps) {
             seconds={values.focusSeconds}
             testId="focus-total"
             tone="focus"
+            size="lg"
+            className="border-emerald-200 bg-emerald-50/50"
           />
           <StatCard
             label="현재 연속 집중"
