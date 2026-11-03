@@ -1,1 +1,52 @@
 @import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: #bfdbfe;
+    color: #0f172a;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * UNKNOWN is deliberately both grey and striped so colour is never the only signal
+ * (paired with the "측정 불가" text label and dashed badge border).
+ */
+.state-striped {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(100, 116, 139, 0.45) 0,
+    rgba(100, 116, 139, 0.45) 4px,
+    rgba(226, 232, 240, 0.9) 4px,
+    rgba(226, 232, 240, 0.9) 9px
+  );
+}
