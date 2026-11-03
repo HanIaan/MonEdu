@@ -11,6 +11,7 @@ import { createMonitoringController } from '../engine';
 import type { MonitoringController, MonitoringSnapshot, SessionStatus, StudySessionApi, SyncStatus } from '../contracts';
 import { SessionSync } from './sync';
 import { IDLE_SNAPSHOT } from './idle';
+import { createAnalysisVideo, removeAnalysisVideo, streamOf } from './analysisVideo';
 
 const ENGINE_VERSION = 'study-monitor-engine/1';
 
@@ -26,6 +27,7 @@ export function useStudySession(): StudySessionApi {
   const controllerRef = useRef<MonitoringController | null>(null);
   const syncRef = useRef<SessionSync | null>(null);
   const unsubTransitionRef = useRef<(() => void) | null>(null);
+  const analysisVideoRef = useRef<HTMLVideoElement | null>(null);
   const [status, setStatus] = useState<SessionStatus>('idle');
   const [session, setSession] = useState<StudySession | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
@@ -85,6 +87,18 @@ export function useStudySession(): StudySessionApi {
     [],
   );
   const monitoring = useSyncExternalStore(subscribe, getSnapshot, () => IDLE_SNAPSHOT);
+  // Preview stream: derived from the analysis video whenever the camera is live.
+  const cameraStream = useMemo(
+    () => (monitoring.cameraStatus === 'active' ? streamOf(analysisVideoRef.current) : null),
+    [monitoring.cameraStatus],
+  );
+
+  const getAnalysisVideo = useCallback((): HTMLVideoElement => {
+    if (!analysisVideoRef.current || !analysisVideoRef.current.isConnected) {
+      analysisVideoRef.current = createAnalysisVideo();
+    }
+    return analysisVideoRef.current;
+  }, []);
 
   // Online/offline → immediate retry.
   useEffect(() => {
@@ -106,12 +120,15 @@ export function useStudySession(): StudySessionApi {
       controllerRef.current?.dispose();
       controllerRef.current = null;
       syncRef.current?.stop();
+      removeAnalysisVideo(analysisVideoRef.current);
+      analysisVideoRef.current = null;
     },
     [],
   );
 
   const start = useCallback(
-    async (video: HTMLVideoElement) => {
+    async () => {
+      const video = getAnalysisVideo();
       setStatus('starting');
       try {
         const controller = getController();
@@ -133,16 +150,15 @@ export function useStudySession(): StudySessionApi {
         throw err;
       }
     },
-    [getController, getSync],
+    [getController, getSync, getAnalysisVideo],
   );
 
   const pauseMonitoring = useCallback(() => controllerRef.current?.pause(), []);
-  const resumeMonitoring = useCallback(
-    async (video: HTMLVideoElement) => {
-      await getController().start(video).catch(() => undefined);
-    },
-    [getController],
-  );
+  const resumeMonitoring = useCallback(async () => {
+    await getController()
+      .start(getAnalysisVideo())
+      .catch(() => undefined);
+  }, [getController, getAnalysisVideo]);
   const startBreak = useCallback(() => controllerRef.current?.startBreak(), []);
   const endBreak = useCallback(() => controllerRef.current?.endBreak(), []);
 
@@ -178,6 +194,7 @@ export function useStudySession(): StudySessionApi {
       session,
       monitoring,
       sync: syncStatus,
+      cameraStream,
       start,
       pauseMonitoring,
       resumeMonitoring,
@@ -185,6 +202,6 @@ export function useStudySession(): StudySessionApi {
       endBreak,
       end,
     }),
-    [status, session, monitoring, syncStatus, start, pauseMonitoring, resumeMonitoring, startBreak, endBreak, end],
+    [status, session, monitoring, syncStatus, cameraStream, start, pauseMonitoring, resumeMonitoring, startBreak, endBreak, end],
   );
 }
