@@ -5,6 +5,7 @@ import { createMonitoringController, type ControllerDeps } from './index';
 const T0 = Date.parse('2026-11-03T00:13:22.000Z');
 
 class FakeTrack {
+  readyState: MediaStreamTrackState = 'live';
   stop = vi.fn(() => {
     this.stopped = true;
   });
@@ -29,8 +30,27 @@ function fakeStream(track: FakeTrack): MediaStream {
   return { getTracks: () => [track], getVideoTracks: () => [track] } as unknown as MediaStream;
 }
 
+/** Live camera video: currentTime advances with (fake) wall time unless `frozen`. */
 function fakeVideo() {
-  return { readyState: 4, srcObject: null as unknown, muted: false, playsInline: false, play: vi.fn(async () => {}), pause: vi.fn() };
+  const v = {
+    readyState: 4,
+    srcObject: null as unknown,
+    muted: false,
+    playsInline: false,
+    paused: false,
+    frozen: false,
+    frozenAt: 0,
+    play: vi.fn(async () => {}),
+    pause: vi.fn(),
+    get currentTime(): number {
+      return this.frozen ? this.frozenAt : Date.now() / 1000;
+    },
+    freeze() {
+      this.frozenAt = this.currentTime;
+      this.frozen = true;
+    },
+  };
+  return v;
 }
 
 class FakePipeline implements VisionPipeline {
@@ -321,5 +341,92 @@ describe('MonitoringController', () => {
     expect(track.stop).toHaveBeenCalled();
     ctrl.dispose();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  describe('frame freshness (hidden 2x2 analysis video may stop delivering frames)', () => {
+    it('frozen currentTime → no new observations → UNKNOWN (INFERENCE_STALLED) after staleFrameMs; resumed frames re-confirm 15 s', async () => {
+      const { ctrl, videoEl, video, pipeline, transitions } = setup();
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(transitions.at(-1)).toMatchObject({ reason: 'SEATED_CONFIRMED' });
+      video.freeze(); // readyState stays 4, element not paused: frames simply stop
+      await vi.advanceTimersByTimeAsync(100); // let an inference already in flight finish
+      const lastFrameAt = ctrl.getSnapshot().lastFrameAt!;
+      const calls = pipeline.analyzeCalls;
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(pipeline.analyzeCalls).toBe(calls); // stale frame is never re-analysed
+      expect(ctrl.getSnapshot().engineState).toBe('FOCUS_ESTIMATED'); // not yet stale
+      await vi.advanceTimersByTimeAsync(2_000);
+      const stall = transitions.at(-1)!;
+      expect(stall).toMatchObject({ from: 'FOCUS_ESTIMATED', state: 'UNKNOWN', reason: 'INFERENCE_STALLED', detectedAt: lastFrameAt });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(transitions.at(-1)).toBe(stall); // no false PRESENT while frozen
+      expect(pipeline.analyzeCalls).toBe(calls);
+
+      video.frozen = false; // frames flow again
+      const resumedAt = Date.now();
+      await vi.advanceTimersByTimeAsync(14_000);
+      expect(transitions.at(-1)).toBe(stall);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(transitions.at(-1)).toMatchObject({ state: 'FOCUS_ESTIMATED', reason: 'SEATED_CONFIRMED' });
+      expect(transitions.at(-1)!.detectedAt).toBeGreaterThanOrEqual(resumedAt);
+      ctrl.dispose();
+    });
+
+    it('unexpectedly paused video with a live track → play() attempted once per tick', async () => {
+      const { ctrl, videoEl, video, track, transitions } = setup();
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(16_000);
+      const before = video.play.mock.calls.length;
+      video.paused = true;
+      video.freeze();
+      await vi.advanceTimersByTimeAsync(2_000); // 4 ticks
+      const during = video.play.mock.calls.length - before;
+      expect(during).toBeGreaterThanOrEqual(3);
+      expect(during).toBeLessThanOrEqual(5);
+      // a rejecting play() never throws out of the scheduler
+      video.play.mockImplementation(() => Promise.reject(new DOMException('blocked', 'NotAllowedError')));
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(transitions.at(-1)).toMatchObject({ reason: 'INFERENCE_STALLED' });
+      // track no longer live → no play() attempts
+      track.readyState = 'ended';
+      const n = video.play.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(video.play.mock.calls.length).toBe(n);
+      ctrl.dispose();
+    });
+
+    it('play() is not called while the video is playing normally', async () => {
+      const { ctrl, videoEl, video } = setup();
+      await ctrl.start(videoEl);
+      const afterStart = video.play.mock.calls.length; // the initial play() in start()
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(video.play.mock.calls.length).toBe(afterStart);
+      ctrl.dispose();
+    });
+
+    it('requestVideoFrameCallback counts as a new frame even if currentTime is not advancing; callback cancelled on dispose', async () => {
+      const { ctrl, videoEl, video, pipeline } = setup();
+      let cb: (() => void) | null = null;
+      const cancel = vi.fn();
+      Object.assign(video, {
+        requestVideoFrameCallback: vi.fn((f: () => void) => {
+          cb = f;
+          return 7;
+        }),
+        cancelVideoFrameCallback: cancel,
+      });
+      video.freeze();
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(600); // first tick consumes the initial frame
+      const n = pipeline.analyzeCalls;
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(pipeline.analyzeCalls).toBe(n); // nothing presented
+      cb!(); // one frame presented
+      await vi.advanceTimersByTimeAsync(600);
+      expect(pipeline.analyzeCalls).toBe(n + 1);
+      ctrl.dispose();
+      expect(cancel).toHaveBeenCalledWith(7);
+    });
   });
 });
