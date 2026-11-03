@@ -32,6 +32,7 @@ export class MediaPipeRunner {
   private object: TasksVision.ObjectDetector | null = null;
   private readonly sampler = new FrameQualitySampler();
   private lastTs = 0;
+  private baseAt: number | null = null;
   private closed = false;
 
   private constructor(private readonly settings: VisionSettings) {}
@@ -67,9 +68,14 @@ export class MediaPipeRunner {
     return runner;
   }
 
-  /** VIDEO-mode tasks require strictly increasing timestamps. */
+  /**
+   * VIDEO-mode tasks require strictly increasing timestamps. They must also be small: tasks-vision
+   * saturates the ms timestamp at int32 max (observed: every epoch-ms frame became 2147483647000 µs →
+   * "Packet timestamp mismatch" and the pose/object graphs stay broken). So use ms since the first frame.
+   */
   private nextTs(at: number): number {
-    this.lastTs = Math.max(this.lastTs + 1, Math.round(at));
+    if (this.baseAt === null) this.baseAt = at;
+    this.lastTs = Math.max(this.lastTs + 1, Math.round(at - this.baseAt) + 1);
     return this.lastTs;
   }
 
