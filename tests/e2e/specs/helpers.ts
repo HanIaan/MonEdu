@@ -77,7 +77,9 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
       };
       const md = navigator.mediaDevices;
       if (!md) return;
-      md.getUserMedia = async () => {
+      // Override on the prototype AND the instance (WebKit with a granted 'camera' permission otherwise
+      // serves its own dark mock device — measured: 320 px wide, mean luma ≈ 17).
+      const fake = async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 480;
@@ -109,6 +111,14 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
         tick();
         return stream;
       };
+      const define = (target: object) =>
+        Object.defineProperty(target, 'getUserMedia', { value: fake, configurable: true, writable: true });
+      try {
+        define(Object.getPrototypeOf(md));
+      } catch {
+        /* ignore */
+      }
+      define(md);
     },
     { person: img('person'), nobody: img('nobody'), initial },
   );
