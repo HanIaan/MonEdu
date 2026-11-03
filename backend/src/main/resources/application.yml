@@ -16,6 +16,8 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+    # Demo databases may already have V1000; still apply newer schema files such as V2.
+    out-of-order: true
     locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
   jackson:
     time-zone: UTC
