@@ -24,13 +24,13 @@ export default defineConfig({
   projects: [
     { name: 'api', testMatch: /api\..*\.spec\.ts/, use: { baseURL: API } },
     { name: 'ui', testMatch: /ui\..*\.spec\.ts/, use: camera() },
-    { name: 'camera-person', testMatch: /camera-person\.(monitoring|pipeline|preview|soak)\.spec\.ts/, use: camera() },
+    { name: 'camera-person', testMatch: /camera-person\.(monitoring|pipeline|preview|phone|soak)\.spec\.ts/, use: camera() },
     { name: 'camera-nobody', testMatch: /camera-nobody\..*\.spec\.ts/, use: camera() },
     {
       // WebKit engine (≈ Safari, but NOT Safari: no Safari power/autoplay policies). Canvas camera only.
       name: 'webkit-person',
-      testMatch: /camera-person\.(monitoring|pipeline|preview)\.spec\.ts/,
-      grep: /teacher sees it live|nobody in frame|frozen camera|pauses the hidden|preview hidden vs shown|first setup/,
+      testMatch: /camera-person\.(monitoring|pipeline|preview|phone)\.spec\.ts/,
+      grep: /teacher sees it live|nobody in frame|frozen camera|pauses the hidden|preview hidden vs shown|first setup|phone in view|pets only/,
       use: { ...devices['Desktop Safari'] },
     },
     // Opt-in (SOAK_LONG=1): 30 min+ soak with its own browser server for process-level CPU sampling.

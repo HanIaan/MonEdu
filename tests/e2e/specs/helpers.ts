@@ -43,14 +43,16 @@ export async function uiLogin(page: Page, email: string) {
 
 /**
  * Canvas-backed fake camera. Replaces getUserMedia with canvas.captureStream() so a test can switch
- * scenes at runtime: window.__fakeCam.setScene('person' | 'nobody' | 'black'), window.__fakeCam.stopTrack().
+ * scenes at runtime: window.__fakeCam.setScene('person' | 'nobody' | 'phone' | 'pets' | 'black'), window.__fakeCam.stopTrack().
  * Images are real photos (fixtures/README.md); inference still runs the real MediaPipe models.
  */
-export async function installCanvasCamera(context: BrowserContext, initial: 'person' | 'nobody' = 'person') {
+export type Scene = 'person' | 'nobody' | 'phone' | 'pets' | 'black';
+
+export async function installCanvasCamera(context: BrowserContext, initial: Exclude<Scene, 'black'> = 'person') {
   const dir = join(import.meta.dirname, '..', 'fixtures');
   const img = (n: string) => `data:image/jpeg;base64,${readFileSync(join(dir, `${n}.jpg`)).toString('base64')}`;
   await context.addInitScript(
-    ({ person, nobody, initial }) => {
+    ({ person, nobody, phone, pets, initial }) => {
       const images: Record<string, HTMLImageElement> = {};
       let scene: string = initial;
       let frozen = false;
@@ -62,6 +64,8 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
       };
       load('person', person);
       load('nobody', nobody);
+      load('phone', phone);
+      load('pets', pets);
       (window as unknown as Record<string, unknown>).__fakeCam = {
         setScene: (s: string) => {
           scene = s;
@@ -122,7 +126,7 @@ export async function installCanvasCamera(context: BrowserContext, initial: 'per
       }
       define(md);
     },
-    { person: img('person'), nobody: img('nobody'), initial },
+    { person: img('person'), nobody: img('nobody'), phone: img('phone'), pets: img('pets'), initial },
   );
 }
 
