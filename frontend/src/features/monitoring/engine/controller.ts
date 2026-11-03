@@ -2,9 +2,13 @@
  * MonitoringController (contract: features/monitoring/contracts.ts). Owns camera + vision pipeline +
  * scheduler + state machine. All browser APIs are injectable for tests.
  *
- * Scheduling: a setTimeout chain at `inferenceIntervalMs`. Every tick first runs the state machine's
- * stall check, then starts an inference unless the previous one is still running (→ framesSkipped).
- * The object detector runs when ≥ `phoneIntervalMs` of elapsed time passed since it last ran.
+ * Scheduling: a setTimeout chain at the *effective* interval (AdaptiveCadence: `inferenceIntervalMs`,
+ * slowed on devices where p95 inference > 40 % of the interval, recovered when it falls). Every tick
+ * first runs the state machine's stall check, then starts an inference unless the previous one is
+ * still running (→ framesSkipped; inferences never overlap). Ticks without a new video frame are not
+ * analysed (→ framesDropped). The object detector runs when ≥ the effective phone interval of elapsed
+ * time passed since it last ran. State-machine durations are elapsed-time based, so cadence changes do
+ * not change accounting.
  * Background tabs may throttle or freeze timers; we do not rely on them running — the state machine
  * detects the gap (tick / visibilitychange / next frame) and reports INFERENCE_STALLED.
  */
@@ -22,6 +26,7 @@ import type {
   StateMachine,
   VisionPipeline,
 } from '../contracts';
+import { AdaptiveCadence } from './adaptiveCadence';
 import { VideoFrameTracker } from './frameFreshness';
 import { createStateMachine, mergeConfig } from './stateMachine';
 
@@ -47,6 +52,8 @@ export interface ControllerDeps {
   maxConsecutiveFailures?: number;
   memory?: () => number | null;
   createStateMachine?: typeof createStateMachine;
+  /** Disable adaptive cadence (always the configured intervals). Default: enabled. */
+  adaptiveCadence?: boolean;
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -85,6 +92,9 @@ class MonitoringControllerImpl implements MonitoringController {
   private lastPhoneAt = Number.NEGATIVE_INFINITY;
   private consecutiveFailures = 0;
   private perf: MonitoringPerf = { framesProcessed: 0, framesSkipped: 0, avgInferenceMs: 0, jsHeapBytes: null };
+  private cadence: AdaptiveCadence;
+  /** Ticks with no new video frame + results discarded because the run was torn down meanwhile. */
+  private framesDropped = 0;
   private disposed = false;
   private frameTracker: VideoFrameTracker | null = null;
   /** Ticks where the video had no new frame (not inferred; lets the stall rule fire). Internal. */
@@ -100,6 +110,8 @@ class MonitoringControllerImpl implements MonitoringController {
     this.clearT = deps.clearTimeout ?? ((id) => clearTimeout(id));
     const startedAt = this.now();
     this.sm = (deps.createStateMachine ?? createStateMachine)(this.cfg, { state: 'UNKNOWN', since: startedAt });
+    this.cadence = new AdaptiveCadence(this.cfg.inferenceIntervalMs, this.cfg.phoneIntervalMs, startedAt);
+    this.syncPerf();
     this.snapshot = {
       cameraStatus: 'idle',
       modelStatus: 'idle',
@@ -186,6 +198,8 @@ class MonitoringControllerImpl implements MonitoringController {
     this.sm.resetEvidence(); // fresh runs: re-confirm seating after every (re)start
     this.consecutiveFailures = 0;
     this.lastPhoneAt = Number.NEGATIVE_INFINITY;
+    this.cadence.reset(this.now()); // device load may differ after a restart; start at full cadence
+    this.syncPerf();
     this.scheduleLoop(gen, 0);
   }
 
@@ -255,7 +269,7 @@ class MonitoringControllerImpl implements MonitoringController {
       this.ensurePlaying();
       void this.runInference(gen, now);
     }
-    this.scheduleLoop(gen, this.cfg.inferenceIntervalMs);
+    this.scheduleLoop(gen, this.cadence.intervalMs);
   }
 
   private async runInference(gen: number, at: number) {
@@ -266,16 +280,23 @@ class MonitoringControllerImpl implements MonitoringController {
     // Never re-analyse a stale frame: no observation → staleFrameMs → INFERENCE_STALLED.
     if (this.frameTracker && !this.frameTracker.consumeNewFrame()) {
       this.staleFrameTicks++;
+      this.framesDropped++;
+      this.syncPerf();
+      this.update({});
       return;
     }
-    const runPhone = at - this.lastPhoneAt >= this.cfg.phoneIntervalMs;
+    const runPhone = at - this.lastPhoneAt >= this.cadence.phoneIntervalMs;
     if (runPhone) this.lastPhoneAt = at;
     this.busy = true;
+    const t0 = this.now();
     let obs: FrameObservation;
     try {
       obs = await pipeline.analyze(video, at, { runPhone });
     } catch (e) {
-      if (gen !== this.generation) return;
+      if (gen !== this.generation) {
+        this.dropResult();
+        return;
+      }
       this.consecutiveFailures++;
       if (this.consecutiveFailures >= (this.deps.maxConsecutiveFailures ?? 3)) {
         this.update({ modelStatus: 'error', error: `inference failed: ${errMsg(e)}` });
@@ -300,11 +321,19 @@ class MonitoringControllerImpl implements MonitoringController {
     } finally {
       if (gen === this.generation) this.busy = false;
     }
-    if (gen !== this.generation || this.disposed) return;
+    if (gen !== this.generation || this.disposed) {
+      this.dropResult(); // result of a torn-down run (pause / camera loss) is never applied
+      return;
+    }
     if (!obs.error) this.consecutiveFailures = 0;
+    // Wall time of the whole analyze() (bitmap + transfer + models), the cost the cadence must absorb.
+    const wallMs = Math.max(obs.inferenceMs, this.now() - t0);
+    if (this.deps.adaptiveCadence !== false) this.cadence.record(wallMs, this.now());
+    else this.cadence.recordOnly(wallMs);
     const n = ++this.perf.framesProcessed;
     this.perf.avgInferenceMs = n === 1 ? obs.inferenceMs : this.perf.avgInferenceMs + (obs.inferenceMs - this.perf.avgInferenceMs) / Math.min(n, 50);
     this.perf.jsHeapBytes = (this.deps.memory ?? defaultMemory)();
+    this.syncPerf();
     this.emit(this.sm.observe(obs));
     this.update({ lastFrameAt: obs.at, lastObservation: obs });
   }
@@ -414,6 +443,21 @@ class MonitoringControllerImpl implements MonitoringController {
   }
 
   // ───────────────────────── state / notify ─────────────────────────
+
+  private dropResult() {
+    this.framesDropped++;
+    this.syncPerf();
+    this.update({});
+  }
+
+  /** Copy adaptive-cadence telemetry (contract v1.2) into perf. */
+  private syncPerf() {
+    this.perf.p95InferenceMs = Math.round(this.cadence.p95InferenceMs * 10) / 10;
+    this.perf.effectiveIntervalMs = this.cadence.intervalMs;
+    this.perf.effectivePhoneIntervalMs = this.cadence.phoneIntervalMs;
+    this.perf.lowPower = this.cadence.lowPower;
+    this.perf.framesDropped = this.framesDropped;
+  }
 
   private emit(t: EngineTransition | null) {
     if (!t) return;
