@@ -32,6 +32,7 @@
 | long-run CPU/FPS/latency (Phase 2) | `SOAK_LONG=1` project `soak-long` (process-tree CPU via `ps`, inference p95, server latency, accounting) |
 | backend load 10/100/1000 users | `backend/loadtest` (W2) — see its RESULTS.md |
 | phone / pet / sleep accuracy | `frontend/bench/vision` (W1) — see its RESULTS.md |
+| accounts v1.3 (sign-up, policy, refresh rotation, logout, lockout, invite codes, Kakao via mock) | backend `AccountsIntegrationTests`, `KakaoIntegrationTests` (W2) · lib/api `client.test.ts` · E2E `api.account`, `ui.account` (mock: `scripts/mock-kakao.mjs` on :4810) |
 | real-webcam field accuracy (seated / writing / reading / phone / away / head down) | `WEBCAM_EVAL=1` project `webcam-eval` — human-in-the-loop, see `docs/webcam-eval.md` (no media recorded) |
 
 ## Commands

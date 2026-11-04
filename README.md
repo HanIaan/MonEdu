@@ -37,7 +37,12 @@ cd backend && ./gradlew bootRun
 cd frontend && npm ci && npm run dev
 ```
 
-Demo accounts (only with `SEED_DEMO_DATA=true`), password `demo1234!`:
+Accounts (v1.3): users sign up at `/signup` (student or teacher). A teacher shows the invite code
+from the dashboard, and a student enters it under "선생님 연결". Kakao login appears when
+`KAKAO_REST_API_KEY` / `KAKAO_REDIRECT_URI` are set (`docs/kakao-setup.md`). Rules:
+`docs/contracts/auth.md`.
+
+Demo accounts (dev only, with `SEED_DEMO_DATA=true`; the login-page hint needs `NEXT_PUBLIC_SHOW_DEMO_ACCOUNTS=1`), password `demo1234!`:
 
 | Email | Role | Assigned |
 |---|---|---|

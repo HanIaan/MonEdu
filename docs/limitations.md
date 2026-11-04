@@ -61,14 +61,32 @@ marked as such.
 - One active session per student; opening the study page in a second tab replaces the first session.
 
 ## Security / ops (MVP scope)
-- JWT stored in `sessionStorage` (XSS would expose it; no refresh tokens; 12 h expiry).
+- v1.3: the access token (JWT) lives in memory only. Sessions persist through a rotating HttpOnly
+  refresh cookie (`sm_rt`, 14 days, reuse detection). Production must set `JWT_TTL=PT15M`,
+  `AUTH_COOKIE_SECURE=true` and HTTPS. The dev default TTL is still 12 h. An XSS can still act inside an
+  open tab; it can no longer read a stored token.
 - SSE fan-out is in-memory (single backend instance). Horizontal scaling needs a shared pub/sub.
 - Load measured on one shared dev machine (W2, `backend/loadtest/RESULTS.md`): 1,000 simulated students
   + 1,010 SSE connections, 180 s steady state, 0 errors, heartbeat p95 8.5 ms, teacher overview p95
   24 ms. Not measured: >1,000 users, multi-hour load, network latency, a separate DB host.
 - Flyway runs with `out-of-order: true` because the demo seed is versioned `V1000`; new schema migrations
   (V2…) must stay additive and monotonically numbered.
-- No rate limiting, account management UI, password reset, or audit log UI.
+- Accounts (contract v1.3, `docs/contracts/auth.md`) — known gaps:
+  - **No email verification and no password reset.** A mail service is needed (user decision 2026-11-04).
+    A typo in the email therefore cannot be recovered except by an operator.
+  - **No account deletion (회원 탈퇴)** and no way to unlink a student from a teacher. Both are needed
+    before real operation under 개인정보보호법; not implemented.
+  - Anyone can sign up as a teacher (no verification). A teacher sees only students who entered that
+    teacher's invite code.
+  - No linking between a password account and a Kakao account. The same person can end up with two
+    accounts.
+  - Login/IP throttling is **in-memory per backend instance**. It resets on restart and is not shared
+    across instances.
+  - The 이용약관 page is a **draft that needs legal review**. The privacy page lists the stored
+    account data.
+  - Kakao login is verified only against a local mock of kauth/kapi (E2E + backend tests). It has
+    **not** been tested against real Kakao, because no Kakao app/keys exist yet (`docs/kakao-setup.md`).
+- No audit log UI.
 
 ## Measurements (2026-11-03, Apple Silicon, Playwright 1.64.1)
 
