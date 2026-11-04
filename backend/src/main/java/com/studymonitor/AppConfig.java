@@ -10,7 +10,7 @@ import java.util.*;
 
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties({AppConfig.JwtSettings.class,AppConfig.Monitoring.class})
+@EnableConfigurationProperties({AppConfig.JwtSettings.class,AppConfig.Monitoring.class,AppConfig.Auth.class,AppConfig.Kakao.class})
 public class AppConfig {
     @Bean Clock clock() { return Clock.systemUTC(); }
     @ConfigurationProperties("app.jwt")
@@ -18,6 +18,14 @@ public class AppConfig {
     @ConfigurationProperties("app.monitoring")
     public record Monitoring(Duration heartbeatInterval, Duration heartbeatTimeout, Duration timeoutScanInterval,
                              Duration maxFutureSkew, Duration liveEndGrace, Duration ssePingInterval) {}
+    @ConfigurationProperties("app.auth")
+    public record Auth(Duration refreshTtl, Duration refreshReuseGrace, boolean cookieSecure,
+                       String agreementsVersion, boolean trustedProxy, int ipLimitPerMinute,
+                       int refreshIpLimitPerMinute, String frontendBaseUrl) {}
+    @ConfigurationProperties("app.kakao")
+    public record Kakao(String restApiKey, String clientSecret, String redirectUri, String authBaseUrl, String apiBaseUrl) {
+        public boolean enabled() { return restApiKey!=null && !restApiKey.isBlank() && redirectUri!=null && !redirectUri.isBlank(); }
+    }
     @Bean FlywayConfigurationCustomizer seedLocations(@org.springframework.beans.factory.annotation.Value("${app.seed-demo-data:false}") boolean seed) {
         return config -> {
             List<String> locations = new ArrayList<>(Arrays.stream(config.getLocations()).map(Object::toString).toList());

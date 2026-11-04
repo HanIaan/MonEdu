@@ -36,6 +36,21 @@ app:
     secret: ${JWT_SECRET:}
     ttl: ${JWT_TTL:PT12H}
     issuer: study-monitor
+  auth:
+    refresh-ttl: ${REFRESH_TTL:P14D}
+    refresh-reuse-grace: ${REFRESH_REUSE_GRACE:PT30S}
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
+    agreements-version: ${AGREEMENTS_VERSION:2026-11-04}
+    trusted-proxy: ${TRUSTED_PROXY:false}
+    ip-limit-per-minute: ${AUTH_IP_LIMIT_PER_MINUTE:30}
+    refresh-ip-limit-per-minute: ${REFRESH_IP_LIMIT_PER_MINUTE:120}
+    frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  kakao:
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI:}
+    auth-base-url: ${KAKAO_AUTH_BASE_URL:https://kauth.kakao.com}
+    api-base-url: ${KAKAO_API_BASE_URL:https://kapi.kakao.com}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   seed-demo-data: ${SEED_DEMO_DATA:false}

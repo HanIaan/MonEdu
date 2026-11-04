@@ -42,6 +42,7 @@ class BackendIntegrationTests {
     @Autowired Store store;
     @Autowired ReportService reports;
     @Autowired AuthService auth;
+    @Autowired AuthThrottle throttle;
     @Autowired JdbcTemplate jdbc;
     @Autowired SseHub streams;
     @Autowired HeartbeatTimeoutScheduler scheduler;
@@ -62,6 +63,7 @@ class BackendIntegrationTests {
         @Override public Instant instant() { return time.get(); }
     }
     @BeforeEach void reset() {
+        throttle.clear();
         streams.close();
         jdbc.execute("TRUNCATE study_sessions, activity_intervals, monitoring_events CASCADE");
         clock.set("2026-11-02T23:50:00Z");

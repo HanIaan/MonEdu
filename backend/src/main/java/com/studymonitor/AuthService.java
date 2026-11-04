@@ -16,18 +16,30 @@ public class AuthService {
     private final Store store; private final PasswordEncoder passwords; private final JwtEncoder encoder;
     private final Clock clock; private final AppConfig.JwtSettings settings;
     private final String dummyHash;
-    public AuthService(Store store,PasswordEncoder passwords,JwtEncoder encoder,Clock clock,AppConfig.JwtSettings settings) {
-        this.store=store; this.passwords=passwords; this.encoder=encoder; this.clock=clock; this.settings=settings;
+    private final AuthThrottle throttle;
+    public AuthService(Store store,PasswordEncoder passwords,JwtEncoder encoder,Clock clock,AppConfig.JwtSettings settings,AuthThrottle throttle) {
+        this.store=store; this.passwords=passwords; this.encoder=encoder; this.clock=clock; this.settings=settings; this.throttle=throttle;
         dummyHash=passwords.encode(UUID.randomUUID().toString());
     }
     @Transactional(readOnly=true)
     public LoginResponse login(LoginRequest request) {
-        Domain.Account user=store.accountByEmail(request.email().toLowerCase(Locale.ROOT)).orElse(null);
-        boolean valid=passwords.matches(request.password(),user==null ? dummyHash : user.passwordHash);
-        if(user==null || !valid) throw fail(UNAUTHORIZED,"BAD_CREDENTIALS","Invalid email or password");
+        String email=request.email().toLowerCase(Locale.ROOT);
+        throttle.checkEmail(email);
+        Domain.Account user=store.accountByEmail(email).orElse(null);
+        boolean valid;
+        try { valid=passwords.matches(request.password(),user==null || user.passwordHash==null ? dummyHash : user.passwordHash); }
+        catch(IllegalArgumentException invalidPassword) { valid=false; }
+        if(user==null || user.passwordHash==null || !valid) {
+            throttle.failed(email);
+            throw fail(UNAUTHORIZED,"BAD_CREDENTIALS","Invalid email or password");
+        }
+        throttle.succeeded(email);
+        return tokens(user);
+    }
+    public LoginResponse tokens(Domain.Account user) {
         Instant now=clock.instant();
         JwtClaimsSet claims=JwtClaimsSet.builder().issuer(settings.issuer()).subject(user.id.toString())
-            .issuedAt(now).expiresAt(now.plus(settings.ttl())).claim("role",user.role.name()).build();
+            .issuedAt(now).expiresAt(now.plus(settings.ttl())).id(UUID.randomUUID().toString()).claim("role",user.role.name()).build();
         String token=encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(),claims)).getTokenValue();
         return new LoginResponse(token,"Bearer",settings.ttl().toSeconds(),user.view());
     }
