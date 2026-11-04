@@ -127,6 +127,21 @@ describe('SignupForm', () => {
     });
   });
 
+  it('shows the Retry-After wait hint when throttled', async () => {
+    vi.spyOn(api, 'signup').mockRejectedValue(
+      new ApiError(429, 'TOO_MANY_ATTEMPTS', 'slow down', null, 300),
+    );
+    renderForm();
+    fillValidFields();
+    fireEvent.click(screen.getByTestId('signup-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('signup-error')).toHaveTextContent(
+        '시도가 너무 많습니다. 5분 후 다시 시도해 주세요.',
+      );
+    });
+  });
+
   it('routes a student to /student after sign-up', async () => {
     vi.spyOn(api, 'signup').mockResolvedValue(loginResponse('STUDENT'));
     renderForm();
