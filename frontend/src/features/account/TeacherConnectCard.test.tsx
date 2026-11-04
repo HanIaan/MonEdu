@@ -58,6 +58,21 @@ describe('TeacherConnectCard', () => {
     });
   });
 
+  it('shows the Retry-After wait hint for throttled joins', async () => {
+    vi.spyOn(api, 'joinTeacher').mockRejectedValue(
+      new ApiError(429, 'TOO_MANY_ATTEMPTS', 'slow down', null, 90),
+    );
+    renderCard();
+
+    const input = await screen.findByTestId('teacher-join-input');
+    fireEvent.change(input, { target: { value: 'ABCD2345' } });
+    fireEvent.click(screen.getByTestId('teacher-join-submit'));
+
+    expect(await screen.findByTestId('teacher-join-error')).toHaveTextContent(
+      '시도가 너무 많습니다. 2분 후 다시 시도해 주세요.',
+    );
+  });
+
   it('adds the teacher to the list after a successful join', async () => {
     vi.spyOn(api, 'joinTeacher').mockResolvedValue({
       teacher: { id: 't-2', displayName: '이선생' },
