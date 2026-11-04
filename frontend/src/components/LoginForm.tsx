@@ -1,40 +1,40 @@
 'use client';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/api/auth';
+import { loginErrorMessage } from './authErrors';
 import { Spinner } from './Skeleton';
 import { homeForRole } from './roles';
 
-function messageFor(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.code === 'BAD_CREDENTIALS') return '이메일 또는 비밀번호가 올바르지 않습니다.';
-    if (err.code === 'NETWORK_ERROR') return '서버에 연결할 수 없습니다. 네트워크 연결을 확인해 주세요.';
-    if (err.code === 'VALIDATION_FAILED') return err.message || '입력 값을 확인해 주세요.';
-    return err.message || '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.';
-  }
-  return '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+export interface LoginFormProps {
+  /** One-time notice (e.g. a Kakao error carried in `?error=`); cleared on submit. */
+  notice?: string | null;
 }
 
 /** Email/password sign-in form. E2E hooks: login-email, login-password, login-submit, login-error. */
-export function LoginForm() {
+export function LoginForm({ notice }: LoginFormProps) {
   const { login } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [dismissedNotice, setDismissedNotice] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const message = error ?? (dismissedNotice ? null : (notice ?? null));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
     setError(null);
+    setDismissedNotice(true);
     setSubmitting(true);
     try {
       const user = await login(email.trim(), password);
       router.replace(homeForRole(user.role));
     } catch (err) {
-      setError(messageFor(err));
+      setError(loginErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -79,13 +79,13 @@ export function LoginForm() {
       </div>
 
       <div aria-live="polite">
-        {error ? (
+        {message ? (
           <p
             data-testid="login-error"
             role="alert"
             className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
           >
-            {error}
+            {message}
           </p>
         ) : null}
       </div>
@@ -99,6 +99,17 @@ export function LoginForm() {
         {submitting ? <Spinner className="h-4 w-4 text-white" /> : null}
         {submitting ? '로그인 중…' : '로그인'}
       </button>
+
+      <p className="text-center text-sm text-slate-600">
+        아직 계정이 없으신가요?{' '}
+        <Link
+          href="/signup"
+          data-testid="login-signup-link"
+          className="font-medium text-slate-900 underline underline-offset-2 hover:text-slate-700"
+        >
+          회원가입
+        </Link>
+      </p>
     </form>
   );
 }
