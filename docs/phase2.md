@@ -63,3 +63,19 @@ No remote push / PR / deployment without explicit user approval.
 - 30-min soak ✓; 2-hour soak ✓ (passed, 120 min: CPU/fps/p95 flat, heap +0.25 MB, listeners constant, 0 frame gaps, accounting exact — see limitations.md)
 - Not covered: real Safari.app (checklist: `docs/safari-manual-checklist.md`), real webcams, Firefox,
   low-end hardware, >1,000 users
+
+## Final verification for tag `phase2-stable` (2026-11-04, C0)
+All measured on this branch at the tagged commit:
+- frontend typecheck ✓, lint ✓, Vitest 194/194; backend `./gradlew test` 71/71.
+- Full E2E 36/36 (23.4 min). Heartbeat loss: the teacher saw UNKNOWN after 81 s, and an 81 s outage
+  added 98 s of UNKNOWN. Phone: DISTRACTION 21.9 / 21.7 s (Chromium / WebKit).
+- 2-hour soak passed (limitations.md).
+- Webcam-eval harness dry run (canvas photos, **not field data**) 9/9 segments within criteria.
+  Seated 12.5 s, phone 20.3 s, away 30.7 s, return 15.8 s; head-down rendered FOCUS_ESTIMATED (no rule; expected limitation).
+
+Still **not done** (needs the user / hardware):
+- real Safari.app (docs/safari-manual-checklist.md)
+- real-webcam field evaluation (docs/webcam-eval.md)
+- Firefox
+- low-end hardware
+- more than 1000 users
