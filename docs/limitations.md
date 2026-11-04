@@ -84,8 +84,11 @@ marked as such.
     across instances.
   - The 이용약관 page is a **draft that needs legal review**. The privacy page lists the stored
     account data.
-  - Kakao login is verified only against a local mock of kauth/kapi (E2E + backend tests). It has
-    **not** been tested against real Kakao, because no Kakao app/keys exist yet (`docs/kakao-setup.md`).
+  - Kakao login: automated tests use a local mock of kauth/kapi (E2E + backend tests).
+    - Real Kakao (user's app, `KAKAO_MODE=real`, 2026-11-04 15:18 KST): one sign-up completed.
+      The server recorded a Kakao identity (TEACHER) and issued refresh tokens.
+    - Not yet confirmed against real Kakao: the second login, cancel, and multi-user use while the app is
+      in development mode. Production HTTPS redirect is also unconfirmed.
 - No audit log UI.
 
 ## Measurements (2026-11-03, Apple Silicon, Playwright 1.64.1)
