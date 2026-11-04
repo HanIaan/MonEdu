@@ -135,3 +135,17 @@ email or Kakao token is stored.
 ## 6. Demo data
 - `SEED_DEMO_DATA` stays `false` by default (production). The E2E/dev scripts set it explicitly.
 - The login page shows the demo-account hint only when `NEXT_PUBLIC_SHOW_DEMO_ACCOUNTS=1`.
+
+## 7. Account deletion (v1.3, user-approved 2026-11-04)
+- `DELETE /api/v1/me` with `DeleteAccountRequest` — any signed-in STUDENT or TEACHER.
+- Password accounts must send the current password (wrong/missing → 400 `VALIDATION_FAILED`,
+  field `password`). Failures share the login lock (§3: 5 failures → 429 for 15 min). Kakao-only
+  accounts send `confirm: true` only. `confirm` must be `true` for everyone (field `confirm`).
+- One transaction deletes the account and everything it owns: `activity_intervals`,
+  `monitoring_events`, `study_sessions` (student), `teacher_invite_codes` (teacher), every
+  `teacher_students` row on either side, `refresh_tokens`, `user_identities`, then `users`.
+  Other accounts are untouched (a deleted teacher's students simply lose the link).
+- Response 204 clears `sm_rt`. Outstanding access tokens fail on `GET /me` (401); the client
+  signs out locally right away. The email may be used again for a new account.
+- Not done: Kakao "unlink" on Kakao's side (needs the user's Kakao access token, which the server
+  does not keep) — logging in with Kakao again starts a fresh sign-up. No grace period / undo.

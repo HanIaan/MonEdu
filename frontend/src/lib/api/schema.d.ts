@@ -219,7 +219,14 @@ export interface paths {
         get: operations["getMe"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * @description v1.3 account deletion (STUDENT or TEACHER). Password accounts must send their current password;
+         *     Kakao-only accounts send `confirm: true` only. Deletes the account and everything it owns (study
+         *     sessions, monitoring events, activity intervals, teacher-student links, invite codes, refresh
+         *     tokens, the Kakao identity) in one transaction and clears the `sm_rt` cookie. Wrong passwords
+         *     share the login failure lock (5 failures → 429 for 15 minutes). See auth.md §7.
+         */
+        delete: operations["deleteMe"];
         options?: never;
         head?: never;
         patch?: never;
@@ -537,6 +544,12 @@ export interface components {
             displayName: string;
             role: components["schemas"]["Role"];
             agreements: components["schemas"]["Agreements"];
+        };
+        DeleteAccountRequest: {
+            /** @description Current password. Required for password accounts; ignored for Kakao-only accounts. */
+            password?: string;
+            /** @description Must be `true`. */
+            confirm: boolean;
         };
         AuthProviders: {
             /** @description Email/password sign-up and login */
@@ -1208,6 +1221,47 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    deleteMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Account deleted; `sm_rt` cleared */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `VALIDATION_FAILED` — `errors[].field` is `password` (wrong or missing) or `confirm` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `TOO_MANY_ATTEMPTS` after repeated wrong passwords (`Retry-After` seconds) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     startStudySession: {

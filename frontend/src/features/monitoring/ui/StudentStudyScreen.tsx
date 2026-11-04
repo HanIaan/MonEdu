@@ -1,13 +1,14 @@
 'use client';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ApiError, StudyDayReport } from '@/lib/api';
 import type { StudySessionApi } from '@/features/monitoring/contracts';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { EmptyState, CardSkeletonGrid } from '@/components/Skeleton';
+import { STUDENT_STATE_LABEL } from '@/components/StateBadge';
 import { Timeline } from '@/components/Timeline';
 import { MonitoringCard } from './MonitoringCard';
 import { SessionControls } from './SessionControls';
-import { LiveStats, deriveLiveValues, useNowMs } from './LiveStats';
+import { DayFacts, LiveStats, deriveLiveValues, useNowMs } from './LiveStats';
 
 export interface StudentStudyScreenProps {
   session: StudySessionApi;
@@ -28,6 +29,7 @@ export interface StudentStudyScreenProps {
  */
 const MemoTimeline = memo(Timeline);
 const MemoLiveStats = memo(LiveStats);
+const MemoDayFacts = memo(DayFacts);
 const MemoSessionControls = memo(SessionControls);
 
 function actionMessage(err: unknown): string {
@@ -49,7 +51,6 @@ export function StudentStudyScreen({
   onRefreshReport,
   tickMs = 1000,
 }: StudentStudyScreenProps) {
-  const [consentAccepted, setConsentAccepted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const busy = session.status === 'starting' || session.status === 'ending';
   const now = useNowMs(tickMs, Boolean(report));
@@ -79,56 +80,76 @@ export function StudentStudyScreen({
     pauseMonitoring();
   }, [pauseMonitoring]);
 
+  // A break turns the camera off (nothing is measured anyway) and ending it turns it back on.
+  // Order matters: BREAK first, so the camera pause does not record a "paused" interval.
   const handleBreakStart = useCallback(() => {
     setActionError(null);
     startBreak();
-  }, [startBreak]);
+    pauseMonitoring();
+  }, [startBreak, pauseMonitoring]);
 
   const handleBreakEnd = useCallback(() => {
     setActionError(null);
     endBreak();
-  }, [endBreak]);
+    void resumeMonitoring().catch((err: unknown) => setActionError(actionMessage(err)));
+  }, [endBreak, resumeMonitoring]);
 
   const handleEnd = useCallback(() => {
     setActionError(null);
     void end().catch((err: unknown) => setActionError(actionMessage(err)));
   }, [end]);
 
+  // Lets the app shell warn before in-app navigation would stop the camera mid-session.
+  const studying = session.status === 'active';
+  useEffect(() => {
+    if (!studying) return;
+    document.body.dataset.studyActive = '1';
+    return () => {
+      delete document.body.dataset.studyActive;
+    };
+  }, [studying]);
+
   return (
-    <div className="space-y-6">
-      {!session.sync.online ? (
-        <ErrorBanner
-          title="오프라인 상태입니다"
-          message="네트워크 연결이 끊겼습니다. 상태 변화는 기기에 저장되었다가 연결되면 자동으로 전송됩니다."
-        />
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
-        <aside className="space-y-4 lg:col-start-2 lg:row-start-1" aria-label="모니터링 및 세션 제어">
-          <MonitoringCard
-            cameraStatus={session.monitoring.cameraStatus}
-            modelStatus={session.monitoring.modelStatus}
-            engineState={session.monitoring.engineState}
-            lastObservation={session.monitoring.lastObservation}
-            framesProcessed={session.monitoring.perf.framesProcessed}
-            perf={session.monitoring.perf}
-            lastReason={session.monitoring.lastReason}
-            paused={session.monitoring.paused}
-            sessionStatus={session.status}
-            cameraStream={session.cameraStream}
-            cameraError={session.monitoring.error}
-            lastFrameAt={session.monitoring.lastFrameAt}
-            online={session.sync.online}
-            now={now}
-            onPause={handlePause}
-            onResume={handleResume}
+    <div className="mx-auto w-full max-w-7xl">
+      <div className="mb-8 space-y-3 empty:hidden">
+        {!session.sync.online ? (
+          <ErrorBanner
+            title="오프라인 상태입니다"
+            message="네트워크 연결이 끊겼습니다. 상태 변화는 기기에 저장되었다가 연결되면 자동으로 전송됩니다."
           />
+        ) : null}
 
+        {reportError ? (
+          <ErrorBanner
+            title={
+              reportError.code === 'NETWORK_ERROR' ? '현황을 불러오지 못했습니다' : '학습 현황을 불러오지 못했습니다'
+            }
+            message={
+              reportError.code === 'NETWORK_ERROR'
+                ? '서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.'
+                : reportError.message
+            }
+            onRetry={onRefreshReport}
+          />
+        ) : null}
+      </div>
+
+      <div className="pt-4 sm:pt-10">
+        {reportLoading && !report ? <CardSkeletonGrid count={2} /> : null}
+
+        {!reportLoading && !report && !reportError ? (
+          <EmptyState
+            title="오늘은 아직 기록이 없어요"
+            description="공부를 시작하면 오늘 공부한 시간이 여기에 쌓여요."
+          />
+        ) : null}
+
+        {report && liveValues ? <MemoLiveStats values={liveValues} sync={session.sync} showDayFacts={false} /> : null}
+
+        <div className={report ? 'mt-12' : 'mt-8'}>
           <MemoSessionControls
             status={session.status}
             onBreak={session.monitoring.onBreak}
-            consentAccepted={consentAccepted}
-            onConsentChange={setConsentAccepted}
             onStart={handleStart}
             onBreakStart={handleBreakStart}
             onBreakEnd={handleBreakEnd}
@@ -136,56 +157,39 @@ export function StudentStudyScreen({
             busy={busy}
             error={actionError}
           />
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">시작하기 전에</h2>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-slate-500">
-              <li>카메라 권한을 허용해야 측정이 시작됩니다.</li>
-              <li>브라우저 탭을 백그라운드로 두면 측정이 일시 중단되어 ‘측정 불가’로 기록됩니다.</li>
-              <li>학습을 마치면 ‘학습 종료’를 눌러 세션을 정리해 주세요.</li>
-            </ul>
-          </div>
-        </aside>
-
-        <div className="space-y-6 lg:col-start-1 lg:row-start-1">
-          {reportError ? (
-            <ErrorBanner
-              title={reportError.code === 'NETWORK_ERROR' ? '현황을 불러오지 못했습니다' : '학습 현황을 불러오지 못했습니다'}
-              message={
-                reportError.code === 'NETWORK_ERROR'
-                  ? '서버에 연결할 수 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.'
-                  : reportError.message
-              }
-              onRetry={onRefreshReport}
-            />
-          ) : null}
-
-          {reportLoading && !report ? <CardSkeletonGrid count={8} /> : null}
-
-          {!reportLoading && !report && !reportError ? (
-            <EmptyState
-              title="오늘의 학습 기록이 없습니다"
-              description="학습을 시작하면 이곳에 상태별 누적 시간과 연속 집중 기록이 표시됩니다."
-            />
-          ) : null}
-
-          {report && liveValues ? <MemoLiveStats values={liveValues} sync={session.sync} /> : null}
-
-          {report ? (
-            <section
-              aria-labelledby="student-timeline-title"
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
-            >
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 id="student-timeline-title" className="text-sm font-semibold text-slate-900">
-                  오늘의 활동 타임라인
-                </h2>
-                <p className="text-xs text-slate-500">구간에 마우스를 올리거나 포커스하면 상세가 표시됩니다.</p>
-              </div>
-              <MemoTimeline intervals={report.intervals} computedAt={report.computedAt} />
-            </section>
-          ) : null}
         </div>
+      </div>
+
+      {report ? (
+        <section aria-labelledby="student-timeline-title" className="mx-auto mt-16 max-w-xl lg:max-w-none">
+          <h2 id="student-timeline-title" className="mb-4 text-center text-sm font-semibold text-slate-500">
+            오늘 공부 시간
+          </h2>
+          <MemoTimeline intervals={report.intervals} computedAt={report.computedAt} labels={STUDENT_STATE_LABEL} fillGaps />
+          {liveValues ? <MemoDayFacts values={liveValues} className="mt-6" /> : null}
+        </section>
+      ) : null}
+
+      <div className="mx-auto mt-16 max-w-xl lg:max-w-none">
+        <MonitoringCard
+          cameraStatus={session.monitoring.cameraStatus}
+          modelStatus={session.monitoring.modelStatus}
+          engineState={session.monitoring.engineState}
+          lastObservation={session.monitoring.lastObservation}
+          framesProcessed={session.monitoring.perf.framesProcessed}
+          perf={session.monitoring.perf}
+          lastReason={session.monitoring.lastReason}
+          paused={session.monitoring.paused}
+          onBreak={session.monitoring.onBreak}
+          sessionStatus={session.status}
+          cameraStream={session.cameraStream}
+          cameraError={session.monitoring.error}
+          lastFrameAt={session.monitoring.lastFrameAt}
+          online={session.sync.online}
+          now={now}
+          onPause={handlePause}
+          onResume={handleResume}
+        />
       </div>
     </div>
   );

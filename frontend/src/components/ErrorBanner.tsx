@@ -20,20 +20,20 @@ export function ErrorBanner({
     <div
       role="alert"
       data-testid={testId}
-      className="flex flex-wrap items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"
+      className="flex flex-wrap items-start gap-3 rounded-2xl bg-rose-50 px-5 py-4 text-sm text-rose-800"
     >
       <span aria-hidden="true" className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-rose-200 text-[10px] font-bold text-rose-800">
         !
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-medium">{title}</p>
+        <p className="font-bold">{title}</p>
         <div className="mt-0.5 text-rose-700">{message}</div>
       </div>
       {onRetry ? (
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-md border border-rose-300 bg-white px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
+          className="rounded-full bg-white px-4 py-1.5 text-xs font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
         >
           {retryLabel}
         </button>

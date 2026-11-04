@@ -83,3 +83,18 @@ export function joinErrorMessage(err: unknown): string {
   if (err.code === 'NETWORK_ERROR') return NETWORK_MESSAGE;
   return err.message || '연결에 실패했습니다. 잠시 후 다시 시도해 주세요.';
 }
+
+/** Map an account-deletion failure to Korean copy; `field` marks the input to highlight. */
+export function deleteAccountErrorView(err: unknown): { message: string; field: 'password' | null } {
+  if (!(err instanceof ApiError)) return { message: '탈퇴하지 못했습니다. 잠시 후 다시 시도해 주세요.', field: null };
+  if (err.code === 'VALIDATION_FAILED') {
+    const passwordError = err.problem?.errors?.find((item) => item.field === 'password');
+    if (passwordError) return { message: passwordError.message || '비밀번호가 올바르지 않습니다.', field: 'password' };
+    return { message: err.message || '입력 값을 확인해 주세요.', field: null };
+  }
+  if (err.code === 'TOO_MANY_ATTEMPTS') {
+    return { message: throttledMessage(err, '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'), field: null };
+  }
+  if (err.code === 'NETWORK_ERROR') return { message: NETWORK_MESSAGE, field: null };
+  return { message: err.message || '탈퇴하지 못했습니다. 잠시 후 다시 시도해 주세요.', field: null };
+}

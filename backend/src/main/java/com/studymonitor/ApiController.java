@@ -15,11 +15,16 @@ import static com.studymonitor.Api.*;
 @RequestMapping("/api/v1")
 public class ApiController {
     private final AuthService auth; private final SessionService sessions; private final ReportService reports; private final SseHub streams;
-    public ApiController(AuthService auth,SessionService sessions,ReportService reports,SseHub streams) {
-        this.auth=auth; this.sessions=sessions; this.reports=reports; this.streams=streams;
+    private final AccountService accounts; private final AuthCookies cookies;
+    public ApiController(AuthService auth,SessionService sessions,ReportService reports,SseHub streams,AccountService accounts,AuthCookies cookies) {
+        this.auth=auth; this.sessions=sessions; this.reports=reports; this.streams=streams; this.accounts=accounts; this.cookies=cookies;
     }
     private UUID id(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
     @GetMapping("/me") public User me(@AuthenticationPrincipal Jwt jwt) { return auth.me(id(jwt)); }
+    @DeleteMapping("/me") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMe(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody DeleteAccountRequest request,jakarta.servlet.http.HttpServletResponse response) {
+        accounts.delete(id(jwt),request); cookies.clear(response,"sm_rt",AuthCookies.AUTH_PATH);
+    }
     @PostMapping("/study-sessions") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasRole('STUDENT')")
     public Session start(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody StartRequest request) { return sessions.start(id(jwt),request); }
     @GetMapping("/study-sessions/{sessionId}")

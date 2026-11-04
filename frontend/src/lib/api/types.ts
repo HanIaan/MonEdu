@@ -10,6 +10,7 @@ export type ErrorCode = S['ErrorCode'];
 export type Problem = S['Problem'];
 export type User = S['User'];
 export type LoginRequest = S['LoginRequest'];
+export type DeleteAccountRequest = S['DeleteAccountRequest'];
 export type LoginResponse = S['LoginResponse'];
 export type StartSessionRequest = S['StartSessionRequest'];
 export type StudySession = S['StudySession'];

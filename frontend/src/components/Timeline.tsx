@@ -1,4 +1,4 @@
-import type { ActivityInterval, LateStatus } from '@/lib/api';
+import type { ActivityInterval, ActivityState, LateStatus } from '@/lib/api';
 import { formatDuration, formatSeoulTime } from '@/lib/time';
 import { STATE_META } from '@/components/StateBadge';
 
@@ -7,6 +7,13 @@ export interface TimelineProps {
   intervals: ActivityInterval[];
   /** Reference instant for the open interval's right edge (report.computedAt). */
   computedAt: string;
+  /** Overrides the state labels in the legend and tooltips (e.g. STUDENT_STATE_LABEL). */
+  labels?: Record<ActivityState, string>;
+  /**
+   * Draw time with no recorded interval (between sessions) as "not measured" too, so the bar reads
+   * as one continuous day. Off by default: the teacher view keeps gaps visible.
+   */
+  fillGaps?: boolean;
   className?: string;
 }
 
@@ -95,25 +102,73 @@ function buildSegments(intervals: ActivityInterval[], computedAtMs: number): { s
   return { segments, spanStart, spanEnd };
 }
 
-function tooltipFor(segment: Segment): string {
-  const meta = STATE_META[segment.interval.state];
+interface Gap {
+  startMs: number;
+  endMs: number;
+  leftPct: number;
+  widthPct: number;
+}
+
+/** Stretches of at least a second that no interval covers. */
+function findGaps(segments: Segment[], spanStart: number, spanEnd: number): Gap[] {
+  const total = Math.max(1, spanEnd - spanStart);
+  const gaps: Gap[] = [];
+  let coveredUntil = spanStart;
+  for (const segment of segments) {
+    if (segment.startMs - coveredUntil >= 1000) {
+      gaps.push({
+        startMs: coveredUntil,
+        endMs: segment.startMs,
+        leftPct: ((coveredUntil - spanStart) / total) * 100,
+        widthPct: ((segment.startMs - coveredUntil) / total) * 100,
+      });
+    }
+    coveredUntil = Math.max(coveredUntil, segment.endMs);
+  }
+  return gaps;
+}
+
+function tooltipAnchor(leftPct: number, widthPct: number): string {
+  const center = leftPct + widthPct / 2;
+  return center < 18 ? 'left-0' : center > 82 ? 'right-0' : 'left-1/2 -translate-x-1/2';
+}
+
+function Tooltip({ anchor, duration, dot, text }: { anchor: string; duration: string; dot: string; text: string }) {
+  return (
+    <div
+      role="tooltip"
+      className={`pointer-events-none absolute bottom-full z-20 mb-2 hidden whitespace-nowrap rounded-2xl bg-slate-900 px-3.5 py-2 text-left text-white shadow-lg group-hover:block group-focus-within:block ${anchor}`}
+    >
+      <span className="block text-base font-bold tabular-nums">{duration}</span>
+      <span className="mt-0.5 flex items-center gap-1.5 text-xs font-medium opacity-80">
+        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+        {text}
+      </span>
+    </div>
+  );
+}
+
+function tooltipFor(segment: Segment, labels?: Record<ActivityState, string>): string {
+  const label = labels?.[segment.interval.state] ?? STATE_META[segment.interval.state].label;
   const start = formatSeoulTime(segment.interval.startedAt);
   const end = segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '진행 중';
   const duration = formatDuration(segment.interval.durationSeconds);
   const reason = segment.interval.reason ? ` · ${reasonText(segment.interval.reason)}` : '';
-  return `${meta.label} · ${start}–${end} · ${duration}${reason}`;
+  return `${label} · ${start}–${end} · ${duration}${reason}`;
 }
 
 /**
  * Horizontal day timeline. Each segment is a focusable element with a tooltip (hover/focus),
  * and a screen-reader table lists the same intervals. `data-testid` per E2E contract.
  */
-export function Timeline({ intervals, computedAt, className = '' }: TimelineProps) {
+export function Timeline({ intervals, computedAt, labels, fillGaps = false, className = '' }: TimelineProps) {
   const { segments, spanStart, spanEnd } = buildSegments(intervals, Date.parse(computedAt));
+  const gaps = fillGaps ? findGaps(segments, spanStart, spanEnd) : [];
+  const unknownLabel = labels?.UNKNOWN ?? STATE_META.UNKNOWN.label;
 
   if (segments.length === 0) {
     return (
-      <div data-testid="timeline" className={`rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 ${className}`}>
+      <div data-testid="timeline" className={`rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-400 ${className}`}>
         이 날짜에는 기록된 활동 구간이 없습니다.
       </div>
     );
@@ -122,20 +177,58 @@ export function Timeline({ intervals, computedAt, className = '' }: TimelineProp
   return (
     <div className={className}>
       <div data-testid="timeline" role="group" aria-label="시간대별 활동 타임라인">
-        <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-600">
+        <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-slate-500 tabular-nums">
           <span>{formatSeoulTime(new Date(spanStart))}</span>
-          <span className="text-slate-500">Asia/Seoul (KST)</span>
+          <span className="sr-only">Asia/Seoul (KST)</span>
           <span>{formatSeoulTime(new Date(spanEnd))}</span>
         </div>
 
-        <div className="flex h-12 w-full overflow-hidden rounded-md border border-slate-300 bg-slate-100">
+        {/*
+          Square segments placed at their real clock position (gaps between sessions stay visible).
+          No overflow clipping, so the hover/focus tooltip can rise above the bar.
+        */}
+        {/*
+          With fillGaps the not-measured stripes are one continuous track under the bar (no seams
+          where separate elements would restart the pattern); measured states sit on top of it.
+        */}
+        <div className={`relative h-10 w-full ${fillGaps ? STATE_META.UNKNOWN.segment : 'bg-slate-100'}`}>
+          {gaps.map((gap) => {
+            const text = `${unknownLabel} (기록 없음) · ${formatSeoulTime(new Date(gap.startMs))}–${formatSeoulTime(new Date(gap.endMs))}`;
+            const duration = formatDuration((gap.endMs - gap.startMs) / 1000);
+            return (
+              <div
+                key={`gap-${gap.startMs}`}
+                className="group absolute top-0 h-full outline-none"
+                style={{ left: `${gap.leftPct}%`, width: `${gap.widthPct}%` }}
+              >
+                <div
+                  data-testid="timeline-gap"
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`${text} · ${duration}`}
+                  className="h-full w-full cursor-default transition-colors group-hover:bg-slate-900/10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900"
+                />
+                <Tooltip
+                  anchor={tooltipAnchor(gap.leftPct, gap.widthPct)}
+                  duration={duration}
+                  dot={STATE_META.UNKNOWN.dot}
+                  text={text}
+                />
+              </div>
+            );
+          })}
           {segments.map((segment, index) => {
             const meta = STATE_META[segment.interval.state];
+            const label = labels?.[segment.interval.state] ?? meta.label;
+            // Over the striped track, not-measured intervals are transparent hit areas for the tooltip.
+            const onTrack = fillGaps && segment.interval.state === 'UNKNOWN';
+            // A divider only where it is visible; on slivers or over the stripes it reads as a stray line.
+            const divider = !fillGaps && index > 0 && segment.widthPct >= 0.6;
             return (
               <div
                 key={segment.interval.id}
-                className="group relative h-full outline-none"
-                style={{ left: 0, width: `${segment.widthPct}%`, minWidth: '2px' }}
+                className="group absolute top-0 h-full outline-none"
+                style={{ left: `${segment.leftPct}%`, width: `${segment.widthPct}%`, minWidth: '2px' }}
               >
                 <div
                   data-testid="timeline-segment"
@@ -143,30 +236,31 @@ export function Timeline({ intervals, computedAt, className = '' }: TimelineProp
                   data-open={segment.interval.open ? 'true' : 'false'}
                   tabIndex={0}
                   role="img"
-                  aria-label={`${tooltipFor(segment)}${segment.interval.open ? ' (진행 중)' : ''}`}
-                  className={`h-full w-full cursor-default transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900 ${meta.segment} ${
-                    index === 0 ? '' : 'border-l border-white/60'
+                  aria-label={`${tooltipFor(segment, labels)}${segment.interval.open ? ' (진행 중)' : ''}`}
+                  className={`h-full w-full cursor-default transition-opacity focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900 ${
+                    onTrack ? 'transition-colors group-hover:bg-slate-900/10' : `group-hover:opacity-80 ${meta.segment}`
+                  } ${divider ? 'border-l-2 border-white' : ''}`}
+                />
+                <Tooltip
+                  anchor={tooltipAnchor(segment.leftPct, segment.widthPct)}
+                  duration={formatDuration(segment.interval.durationSeconds)}
+                  dot={meta.dot}
+                  text={`${label} · ${formatSeoulTime(segment.interval.startedAt)}–${
+                    segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '지금'
                   }`}
                 />
-                <div
-                  role="tooltip"
-                  className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg group-hover:block group-hover:opacity-100 group-focus-within:block group-focus-within:opacity-100"
-                >
-                  {tooltipFor(segment)}
-                  {segment.interval.open ? ' (진행 중)' : ''}
-                </div>
               </div>
             );
           })}
         </div>
 
-        <div data-testid="timeline-legend" className="mt-3">
-          <p className="mb-1.5 text-[11px] font-semibold text-slate-500">범례 (색과 함께 상태 이름으로 구분)</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        <div data-testid="timeline-legend" className="mt-4">
+          <p className="sr-only">범례 (색과 함께 상태 이름으로 구분)</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
             {(Object.keys(STATE_META) as Array<keyof typeof STATE_META>).map((state) => (
-              <span key={state} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
-                <span aria-hidden="true" className={`h-3 w-3 rounded-sm ring-1 ring-inset ring-slate-900/10 ${STATE_META[state].segment}`} />
-                {STATE_META[state].label}
+              <span key={state} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                <span aria-hidden="true" className={`h-2.5 w-2.5 ${STATE_META[state].segment}`} />
+                {labels?.[state] ?? STATE_META[state].label}
               </span>
             ))}
           </div>
@@ -186,7 +280,7 @@ export function Timeline({ intervals, computedAt, className = '' }: TimelineProp
         <tbody>
           {segments.map((segment) => (
             <tr key={`sr-${segment.interval.id}`}>
-              <td>{STATE_META[segment.interval.state].label}</td>
+              <td>{labels?.[segment.interval.state] ?? STATE_META[segment.interval.state].label}</td>
               <td>{formatSeoulTime(segment.interval.startedAt)}</td>
               <td>{segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '진행 중'}</td>
               <td>{formatDuration(segment.interval.durationSeconds)}</td>

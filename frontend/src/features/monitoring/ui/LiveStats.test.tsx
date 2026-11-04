@@ -42,8 +42,9 @@ describe('LiveStats', () => {
   it('emphasises the focus total as the primary metric', () => {
     render(<LiveStats values={makeValues()} sync={SYNC} />);
     const focus = screen.getByTestId('focus-total');
-    expect(focus.className).toContain('text-3xl');
-    expect(focus.closest('div')?.className).toContain('border-emerald-200');
+    // The day's focus total is the single large numeral on the panel.
+    expect(focus.className).toContain('font-extrabold');
+    expect(document.querySelectorAll('.font-extrabold')).toHaveLength(1);
   });
 
   it('renders an empty data-seconds when the student has not been seated', () => {
@@ -61,7 +62,8 @@ describe('LiveStats', () => {
   it('exposes the current state and sync status', () => {
     render(<LiveStats values={makeValues({ currentState: 'DISTRACTION_SUSPECTED' })} sync={{ ...SYNC, pendingEvents: 3 }} />);
     expect(screen.getByTestId('current-state')).toHaveAttribute('data-state', 'DISTRACTION_SUSPECTED');
-    expect(screen.getByTestId('current-state')).toHaveTextContent('비집중 의심');
+    // Student-facing wording (STUDENT_STATE_LABEL); the state code is unchanged.
+    expect(screen.getByTestId('current-state')).toHaveTextContent('집중 흐트러짐');
     expect(screen.getByTestId('sync-status')).toHaveAttribute('data-pending', '3');
     expect(screen.getByTestId('sync-status')).toHaveTextContent('동기화 대기 3건');
   });

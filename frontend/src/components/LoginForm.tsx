@@ -43,7 +43,7 @@ export function LoginForm({ notice }: LoginFormProps) {
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
       <div>
-        <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
+        <label htmlFor="login-email" className="block text-sm font-semibold text-slate-900">
           이메일
         </label>
         <input
@@ -56,12 +56,12 @@ export function LoginForm({ notice }: LoginFormProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="name@example.com"
-          className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20"
+          className="mt-1.5 block w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-900/5"
         />
       </div>
 
       <div>
-        <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">
+        <label htmlFor="login-password" className="block text-sm font-semibold text-slate-900">
           비밀번호
         </label>
         <input
@@ -74,7 +74,7 @@ export function LoginForm({ notice }: LoginFormProps) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••"
-          className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20"
+          className="mt-1.5 block w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-900/5"
         />
       </div>
 
@@ -83,7 +83,7 @@ export function LoginForm({ notice }: LoginFormProps) {
           <p
             data-testid="login-error"
             role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
           >
             {message}
           </p>
@@ -94,7 +94,7 @@ export function LoginForm({ notice }: LoginFormProps) {
         type="submit"
         data-testid="login-submit"
         disabled={submitting || !email.trim() || !password}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+        className="flex w-full items-center justify-center gap-2 h-13 rounded-full bg-slate-900 px-6 text-base font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {submitting ? <Spinner className="h-4 w-4 text-white" /> : null}
         {submitting ? '로그인 중…' : '로그인'}

@@ -29,6 +29,9 @@ public final class Api {
                                 @NotNull(message="약관 동의가 필요합니다.") @Valid Agreements agreements) {}
     public record KakaoCompleteRequest(String displayName, @NotNull(message="역할을 선택해 주세요.") Role role,
                                        @NotNull(message="약관 동의가 필요합니다.") @Valid Agreements agreements) {}
+    /** Account deletion: password accounts re-enter their password; Kakao-only accounts confirm only. */
+    public record DeleteAccountRequest(@Size(max=1024) String password,
+                                       @NotNull(message="탈퇴 확인이 필요합니다.") @AssertTrue(message="탈퇴 확인이 필요합니다.") Boolean confirm) {}
     public record AuthProviders(boolean password, boolean kakao) {}
     public record KakaoPending(String nickname) {}
     public record InviteCode(String code, Instant createdAt) {}

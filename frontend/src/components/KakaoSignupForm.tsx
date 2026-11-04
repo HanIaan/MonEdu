@@ -11,8 +11,8 @@ import { RoleChoice } from './SignupForm';
 import { LoadingState, Spinner } from './Skeleton';
 
 const INPUT =
-  'mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20';
-const LABEL = 'block text-sm font-medium text-slate-700';
+  'mt-1.5 block w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-900/5';
+const LABEL = 'block text-sm font-semibold text-slate-900';
 
 type LoadStatus = 'loading' | 'ready' | 'expired' | 'error';
 
@@ -188,7 +188,10 @@ export function KakaoSignupForm() {
           />
           <div className="min-w-0">
             <label htmlFor="kakao-signup-agree-privacy" className="text-sm text-slate-700">
-              <span className="font-medium">개인정보 처리방침</span>에 동의합니다 (필수)
+              <span className="font-medium">개인정보 처리방침</span>과 카메라 분석에 동의합니다 (필수)
+              <span className="mt-0.5 block text-xs text-slate-500">
+                공부할 때 카메라 영상은 브라우저 안에서만 분석되며 서버로 전송되거나 저장되지 않습니다.
+              </span>
             </label>
             <Link href="/privacy" className="ml-1 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-800">
               방침 보기
@@ -202,7 +205,7 @@ export function KakaoSignupForm() {
           <p
             data-testid="kakao-signup-error"
             role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
           >
             {formError}
           </p>
@@ -213,7 +216,7 @@ export function KakaoSignupForm() {
         type="submit"
         data-testid="kakao-signup-submit"
         disabled={submitting}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+        className="flex w-full items-center justify-center gap-2 h-13 rounded-full bg-slate-900 px-6 text-base font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {submitting ? <Spinner className="h-4 w-4 text-white" /> : null}
         {submitting ? '가입 중…' : '카카오 계정으로 가입 완료'}

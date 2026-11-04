@@ -8,7 +8,7 @@ export default function TeacherPage() {
     <RequireRole role="TEACHER">
       <AppShell
         title="학생 관리"
-        subtitle="담당 학생의 오늘 상태와 학습 현황입니다. 모든 상태는 자동 분석에 따른 추정입니다."
+        subtitle="담당 학생들의 오늘 공부 현황이 실시간으로 업데이트돼요."
       >
         <TeacherScreen />
       </AppShell>

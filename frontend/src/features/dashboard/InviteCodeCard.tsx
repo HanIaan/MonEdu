@@ -32,14 +32,14 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
   return (
     <section
       aria-labelledby="invite-code-title"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className="rounded-3xl bg-slate-50 p-6 sm:p-8"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="invite-code-title" className="text-base font-semibold text-slate-900">
+          <h2 id="invite-code-title" className="text-lg font-bold text-slate-900">
             선생님 연결 코드
           </h2>
-          <p className="mt-1 text-sm text-slate-600">학생이 가입 후 이 코드를 입력하면 연결됩니다.</p>
+          <p className="mt-1 text-sm text-slate-500">학생이 가입 후 이 코드를 입력하면 연결됩니다.</p>
         </div>
         <button
           type="button"
@@ -49,7 +49,7 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
             setConfirming(true);
           }}
           disabled={!code || rotating}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-10 rounded-full px-4 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-white hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
         >
           재발급
         </button>
@@ -76,11 +76,11 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
       ) : null}
 
       {code ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center gap-4">
           <code
             data-testid="invite-code"
             data-code={code.code}
-            className="select-all rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 font-mono text-2xl font-semibold tracking-[0.18em] text-slate-900 sm:text-3xl"
+            className="select-all font-mono text-4xl font-bold tracking-[0.16em] text-slate-900 sm:text-5xl"
           >
             {code.code}
           </code>
@@ -90,14 +90,14 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
             onClick={() => {
               void handleCopy();
             }}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+            className="h-11 rounded-full bg-slate-900 px-6 text-sm font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           >
             복사
           </button>
         </div>
       ) : null}
 
-      <p aria-live="polite" className="mt-2 min-h-5 text-sm text-emerald-700">
+      <p aria-live="polite" className="mt-2 min-h-5 text-sm font-semibold text-emerald-700">
         {status}
       </p>
 
@@ -105,9 +105,9 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
         <div
           role="alertdialog"
           aria-labelledby="invite-code-confirm-title"
-          className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mt-2 rounded-2xl bg-amber-50 px-5 py-4 text-sm text-amber-900"
         >
-          <p id="invite-code-confirm-title" className="font-medium">
+          <p id="invite-code-confirm-title" className="font-bold">
             코드를 재발급할까요?
           </p>
           <p className="mt-1 text-amber-800">{CONFIRM_TEXT}</p>
@@ -119,7 +119,7 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
                 void handleRotate();
               }}
               disabled={rotating}
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="h-10 rounded-full bg-slate-900 px-5 text-sm font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {rotating ? '발급 중…' : '재발급 확정'}
             </button>
@@ -127,7 +127,7 @@ export const InviteCodeCard = memo(function InviteCodeCard() {
               type="button"
               onClick={() => setConfirming(false)}
               disabled={rotating}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+              className="h-10 rounded-full px-4 text-sm font-semibold text-slate-600 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
             >
               취소
             </button>

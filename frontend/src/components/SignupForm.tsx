@@ -12,8 +12,8 @@ import { Spinner } from './Skeleton';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const INPUT =
-  'mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20';
-const LABEL = 'block text-sm font-medium text-slate-700';
+  'mt-1.5 block w-full h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-900/5';
+const LABEL = 'block text-sm font-semibold text-slate-900';
 
 function FieldError({ field, message }: { field: string; message?: string }) {
   if (!message) return null;
@@ -35,7 +35,7 @@ export function RoleChoice({
 }) {
   const option = (value: Role, label: string, hint: string) => (
     <label
-      className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 transition-colors ${
+      className={`flex cursor-pointer items-start gap-2 rounded-2xl border p-4 transition-colors ${
         role === value ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white hover:bg-slate-50'
       }`}
     >
@@ -71,7 +71,7 @@ function PasswordHints({ password, email }: { password: string; email: string })
   const touched = password.length > 0;
 
   return (
-    <div id="signup-password-hints" data-testid="signup-password-hints" className="mt-2 rounded-lg bg-slate-50 px-3 py-2">
+    <div id="signup-password-hints" data-testid="signup-password-hints" className="mt-2 rounded-2xl bg-slate-50 px-4 py-3">
       <p className="text-xs font-medium text-slate-600">비밀번호 조건</p>
       <ul className="mt-1 space-y-0.5">
         {rules.map((rule) => (
@@ -295,7 +295,10 @@ export function SignupForm({ initialRole = 'STUDENT' }: { initialRole?: Role }) 
           />
           <div className="min-w-0">
             <label htmlFor="signup-agree-privacy" className="text-sm text-slate-700">
-              <span className="font-medium">개인정보 처리방침</span>에 동의합니다 (필수)
+              <span className="font-medium">개인정보 처리방침</span>과 카메라 분석에 동의합니다 (필수)
+              <span className="mt-0.5 block text-xs text-slate-500">
+                공부할 때 카메라 영상은 브라우저 안에서만 분석되며 서버로 전송되거나 저장되지 않습니다.
+              </span>
             </label>
             <Link
               href="/privacy"
@@ -317,7 +320,7 @@ export function SignupForm({ initialRole = 'STUDENT' }: { initialRole?: Role }) 
           <p
             data-testid="signup-error"
             role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
           >
             {formError}
           </p>
@@ -328,7 +331,7 @@ export function SignupForm({ initialRole = 'STUDENT' }: { initialRole?: Role }) 
         type="submit"
         data-testid="signup-submit"
         disabled={submitting}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+        className="flex w-full items-center justify-center gap-2 h-13 rounded-full bg-slate-900 px-6 text-base font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {submitting ? <Spinner className="h-4 w-4 text-white" /> : null}
         {submitting ? '가입 중…' : '가입하기'}

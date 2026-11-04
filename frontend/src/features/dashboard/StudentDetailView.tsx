@@ -20,7 +20,7 @@ export interface StudentDetailViewProps {
 
 function SessionStatusText({ status }: { status: 'ACTIVE' | 'ENDED' }) {
   return status === 'ACTIVE' ? (
-    <span className="font-medium text-emerald-700">진행 중</span>
+    <span className="font-semibold text-emerald-700">진행 중</span>
   ) : (
     <span className="text-slate-600">종료</span>
   );
@@ -41,17 +41,24 @@ export const StudentDetailView = memo(function StudentDetailView({
   }
 
   return (
-    <div data-student-id={studentId} className="space-y-6">
+    <div data-student-id={studentId} className="space-y-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">학생 상세</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
-            {report?.studentName ?? '학생'}
-          </h2>
-          <p className="mt-0.5 text-sm text-slate-500">{date} (Asia/Seoul)</p>
+        <div className="flex items-center gap-4">
+          <span
+            aria-hidden="true"
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xl font-bold text-white"
+          >
+            {(report?.studentName ?? '학').slice(0, 1)}
+          </span>
+          <div>
+            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+              {report?.studentName ?? '학생'}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">{date}</p>
+          </div>
         </div>
         <div>
-          <label htmlFor="detail-date" className="block text-xs font-medium text-slate-500">
+          <label htmlFor="detail-date" className="block text-xs font-semibold text-slate-500">
             날짜 선택
           </label>
           <input
@@ -62,7 +69,7 @@ export const StudentDetailView = memo(function StudentDetailView({
             onChange={(event) => {
               if (event.target.value) onDateChange(event.target.value);
             }}
-            className="mt-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20"
+            className="mt-1 h-11 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus-visible:ring-4 focus-visible:ring-slate-900/5 dark:[color-scheme:dark]"
           />
         </div>
       </div>
@@ -70,26 +77,29 @@ export const StudentDetailView = memo(function StudentDetailView({
       {error ? (
         <ErrorBanner
           title="학습 기록을 불러오지 못했습니다"
-          message={error.code === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.' : error.message}
+          message={
+            error.code === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.' : error.message
+          }
           onRetry={onRetry}
         />
       ) : null}
 
       {loading && !report ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-3xl bg-slate-50 p-6">
           <LoadingState label="학습 기록을 불러오는 중…" />
         </div>
       ) : null}
 
       {report ? (
         <>
-          <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <dl className="grid grid-cols-2 gap-3 md:grid-cols-5">
             <StatCard
               label="총 집중 추정"
               value={formatDuration(report.totals.focusSeconds)}
               seconds={report.totals.focusSeconds}
               testId="focus-total"
-              tone="focus"
+              size="lg"
+              className="col-span-2 flex flex-col justify-center md:row-span-2"
             />
             <StatCard
               label="자리비움"
@@ -127,50 +137,61 @@ export const StudentDetailView = memo(function StudentDetailView({
             />
           </dl>
 
-          <section aria-labelledby="detail-timeline-title" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h3 id="detail-timeline-title" className="text-sm font-semibold text-slate-900">
-                시간대별 활동 타임라인
+          <section aria-labelledby="detail-timeline-title">
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <h3 id="detail-timeline-title" className="text-lg font-bold text-slate-900">
+                시간대별 활동
               </h3>
-              <p className="text-xs text-slate-500">구간에 마우스를 올리거나 키보드로 포커스하면 상세가 표시됩니다.</p>
+              <p className="text-xs text-slate-500">구간에 마우스를 올리면 얼마나 이어졌는지 보여요.</p>
             </div>
             <Timeline intervals={report.intervals} computedAt={report.computedAt} />
           </section>
 
-          <section aria-labelledby="detail-sessions-title" className="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
-              <h3 id="detail-sessions-title" className="text-sm font-semibold text-slate-900">
-                세션 기록
-              </h3>
-            </div>
+          <section aria-labelledby="detail-sessions-title">
+            <h3 id="detail-sessions-title" className="mb-3 text-lg font-bold text-slate-900">
+              세션 기록
+            </h3>
 
             {report.sessions.length === 0 ? (
-              <div className="p-4">
-                <EmptyState title="이 날짜의 세션이 없습니다" description="학습을 시작하면 세션 기록이 이곳에 표시됩니다." />
+              <div>
+                <EmptyState
+                  title="이 날짜의 세션이 없습니다"
+                  description="학습을 시작하면 세션 기록이 이곳에 표시됩니다."
+                />
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
                   <caption className="sr-only">세션 기록</caption>
                   <thead>
-                    <tr className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th scope="col" className="px-4 py-2.5">시작 (KST)</th>
-                      <th scope="col" className="px-4 py-2.5">종료 (KST)</th>
-                      <th scope="col" className="px-4 py-2.5">상태</th>
-                      <th scope="col" className="px-4 py-2.5">종료 사유</th>
+                    <tr className="text-xs font-semibold text-slate-500">
+                      <th scope="col" className="px-4 pb-3">
+                        시작
+                      </th>
+                      <th scope="col" className="px-4 pb-3">
+                        종료
+                      </th>
+                      <th scope="col" className="px-4 pb-3">
+                        상태
+                      </th>
+                      <th scope="col" className="px-4 pb-3">
+                        종료 사유
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {report.sessions.map((session) => (
-                      <tr key={session.id} className="border-t border-slate-100">
-                        <td className="px-4 py-3 tabular-nums text-slate-800">{formatSeoulTime(session.startedAt)}</td>
-                        <td className="px-4 py-3 tabular-nums text-slate-800">
+                      <tr key={session.id} className="border-t border-slate-100 hover:bg-slate-50">
+                        <td className="px-4 py-4 font-semibold tabular-nums text-slate-900">
+                          {formatSeoulTime(session.startedAt)}
+                        </td>
+                        <td className="px-4 py-4 font-semibold tabular-nums text-slate-900">
                           {session.endedAt ? formatSeoulTime(session.endedAt) : '—'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-4">
                           <SessionStatusText status={session.status} />
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{reasonText(session.endReason)}</td>
+                        <td className="px-4 py-4 text-slate-600">{reasonText(session.endReason)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -179,7 +200,7 @@ export const StudentDetailView = memo(function StudentDetailView({
             )}
           </section>
 
-          <p className="text-[11px] leading-relaxed text-slate-500">
+          <p className="text-xs leading-relaxed text-slate-500">
             표시된 상태와 시간은 자동 분석에 따른 추정이며, 확인된 사실이나 징계의 근거가 아닙니다. 교사는
             영상·이미지·얼굴 특징값을 볼 수 없습니다.
           </p>

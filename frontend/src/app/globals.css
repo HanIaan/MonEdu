@@ -1,9 +1,56 @@
 @import 'tailwindcss';
 
+/* Theme is a class on <html> (set before paint by the inline script in layout.tsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans:
     'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
     'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
+}
+
+/*
+ * Dark mode remaps the palette instead of adding `dark:` variants everywhere: the neutral scale is
+ * inverted (white = page surface, slate-900 = ink) and the state tints become low-light tints, so
+ * every screen keeps its contrast relationships and the state colours keep their meaning.
+ */
+.dark {
+  /* Soft graphite, not black: lower brightness while keeping every text tone at 4.5:1 or more. */
+  --color-white: #1d1e22;
+
+  --color-slate-50: #24252a;
+  --color-slate-100: #2b2c32;
+  --color-slate-200: #373840;
+  --color-slate-300: #4c4e57;
+  --color-slate-400: #a3a6af;
+  --color-slate-500: #b6b9c1;
+  --color-slate-600: #c8cad0;
+  --color-slate-700: #d7d9de;
+  --color-slate-800: #e6e7ea;
+  --color-slate-900: #f3f3f5;
+  --color-slate-950: #fafafa;
+
+  --color-emerald-50: #20372d;
+  --color-emerald-100: #244234;
+  --color-emerald-200: #2f5a45;
+  --color-emerald-700: #6ee7a8;
+  --color-emerald-800: #a7f3c9;
+
+  --color-amber-50: #3a3020;
+  --color-amber-200: #6b5424;
+  --color-amber-700: #fcc94d;
+  --color-amber-800: #fdd877;
+  --color-amber-900: #fde7a8;
+
+  --color-rose-50: #3d2529;
+  --color-rose-200: #6d3039;
+  --color-rose-300: #8a3a46;
+  --color-rose-700: #fb8a9b;
+  --color-rose-800: #fdb3bd;
+
+  --color-blue-50: #1f2c42;
+  --color-blue-700: #7cb5fb;
+  --color-blue-800: #a8cdfd;
 }
 
 @layer base {
@@ -11,9 +58,13 @@
     color-scheme: light;
   }
 
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-white);
+    color: var(--color-slate-900);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -21,8 +72,8 @@
   }
 
   ::selection {
-    background-color: #bfdbfe;
-    color: #0f172a;
+    background-color: var(--color-slate-900);
+    color: var(--color-white);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -48,5 +99,15 @@
     rgba(100, 116, 139, 0.45) 4px,
     rgba(226, 232, 240, 0.9) 4px,
     rgba(226, 232, 240, 0.9) 9px
+  );
+}
+
+.dark .state-striped {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(163, 166, 175, 0.6) 0,
+    rgba(163, 166, 175, 0.6) 4px,
+    rgba(55, 56, 64, 0.95) 4px,
+    rgba(55, 56, 64, 0.95) 9px
   );
 }

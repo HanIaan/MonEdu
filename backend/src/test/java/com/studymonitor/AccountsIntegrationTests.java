@@ -340,4 +340,72 @@ class AccountsIntegrationTests {
             assertThat(invites.list(student.id)).hasSize(1);
         }
     }
+    ResultActions deleteMe(Domain.Account user,Object body) throws Exception {
+        return mvc.perform(delete("/api/v1/me").header("Authorization","Bearer "+bearer(user))
+            .contentType("application/json").content(json.writeValueAsString(body)));
+    }
+    int rows(String table,String column,UUID id) {
+        return db.queryForObject("select count(*) from "+table+" where "+column+"=?",Integer.class,id);
+    }
+    @Test void studentDeletionRemovesEverythingOwnedAndKeepsTheTeacher() throws Exception {
+        var teacher=account("t@sample.test",Role.TEACHER); var student=account("s@sample.test",Role.STUDENT);
+        var other=account("o@sample.test",Role.STUDENT);
+        invites.join(student.id,invites.code(teacher.id,false).code()); invites.join(other.id,invites.code(teacher.id,false).code());
+        sessions.start(student.id,new StartRequest(clock.instant(),null));
+        sessions.start(other.id,new StartRequest(clock.instant(),null));
+        Cookie rt=cookie(login("s@sample.test"),"sm_rt");
+        String token=bearer(student);
+        var result=deleteMe(student,Map.of("password",PASSWORD,"confirm",true)).andExpect(status().isNoContent()).andReturn();
+        Cookie cleared=cookie(result,"sm_rt"); assertThat(cleared.getMaxAge()).isZero(); assertThat(cleared.getPath()).isEqualTo("/api/v1/auth");
+        assertThat(rows("users","id",student.id)).isZero();
+        assertThat(rows("study_sessions","student_id",student.id)).isZero();
+        assertThat(rows("activity_intervals","student_id",student.id)).isZero();
+        assertThat(rows("monitoring_events","student_id",student.id)).isZero();
+        assertThat(rows("teacher_students","student_id",student.id)).isZero();
+        assertThat(rows("refresh_tokens","user_id",student.id)).isZero();
+        // Everyone else keeps their data.
+        assertThat(rows("users","id",teacher.id)).isOne();
+        assertThat(rows("teacher_students","student_id",other.id)).isOne();
+        assertThat(rows("study_sessions","student_id",other.id)).isOne();
+        // The old tokens no longer work.
+        mvc.perform(get("/api/v1/me").header("Authorization","Bearer "+token)).andExpect(status().isUnauthorized());
+        rotate(rt).andExpect(status().isUnauthorized());
+        postBody("/api/v1/auth/login",new LoginRequest("s@sample.test",PASSWORD)).andExpect(status().isUnauthorized());
+        // The email can be used again for a fresh account.
+        postBody("/api/v1/auth/signup",signup("s@sample.test",PASSWORD,"새 계정")).andExpect(status().isCreated());
+    }
+    @Test void teacherDeletionRemovesInviteCodeAndLinksButNotStudents() throws Exception {
+        var teacher=account("t@sample.test",Role.TEACHER); var student=account("s@sample.test",Role.STUDENT);
+        invites.join(student.id,invites.code(teacher.id,false).code());
+        deleteMe(teacher,Map.of("password",PASSWORD,"confirm",true)).andExpect(status().isNoContent());
+        assertThat(rows("teacher_invite_codes","teacher_id",teacher.id)).isZero();
+        assertThat(rows("teacher_students","teacher_id",teacher.id)).isZero();
+        assertThat(rows("users","id",student.id)).isOne();
+        assertThat(invites.list(student.id)).isEmpty();
+    }
+    @Test void wrongOrMissingPasswordOrNoConfirmationKeepsTheAccount() throws Exception {
+        var student=account("s@sample.test",Role.STUDENT);
+        deleteMe(student,Map.of("password","WrongPass99!","confirm",true)).andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("VALIDATION_FAILED")).andExpect(jsonPath("$.errors[0].field").value("password"))
+            .andExpect(jsonPath("$.errors[0].message").value("비밀번호가 올바르지 않습니다."));
+        deleteMe(student,Map.of("confirm",true)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].field").value("password"));
+        deleteMe(student,Map.of("password",PASSWORD,"confirm",false)).andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors[0].field").value("confirm"));
+        deleteMe(student,Map.of("password",PASSWORD)).andExpect(status().isBadRequest());
+        assertThat(rows("users","id",student.id)).isOne();
+        mvc.perform(delete("/api/v1/me").contentType("application/json").content("{\"confirm\":true}")).andExpect(status().isUnauthorized());
+    }
+    @Test void repeatedWrongPasswordsAreThrottled() throws Exception {
+        var student=account("s@sample.test",Role.STUDENT);
+        for(int i=0;i<4;i++) deleteMe(student,Map.of("password","WrongPass99!","confirm",true)).andExpect(status().isBadRequest());
+        deleteMe(student,Map.of("password","WrongPass99!","confirm",true)).andExpect(status().isTooManyRequests());
+        deleteMe(student,Map.of("password",PASSWORD,"confirm",true)).andExpect(status().isTooManyRequests());
+        assertThat(rows("users","id",student.id)).isOne();
+    }
+    @Test void kakaoOnlyAccountDeletesWithConfirmationAndRemovesTheIdentity() throws Exception {
+        var user=accounts.complete("kakao-delete-1",new KakaoCompleteRequest("카카오",Role.STUDENT,AGREED));
+        deleteMe(user,Map.of("confirm",true)).andExpect(status().isNoContent());
+        assertThat(rows("user_identities","user_id",user.id)).isZero();
+        assertThat(accounts.identity("kakao-delete-1")).isNull();
+    }
 }

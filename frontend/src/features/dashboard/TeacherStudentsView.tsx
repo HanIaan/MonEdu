@@ -15,20 +15,26 @@ export interface TeacherStudentsViewProps {
   onRetry: () => void;
 }
 
-const HEAD =
-  'bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500';
+const HEAD = 'text-left text-xs font-semibold text-slate-500';
 
 function CellLabel({ children }: { children: string }) {
   return <span className="text-xs font-medium text-slate-500 md:hidden">{children}</span>;
 }
 
 /** Teacher dashboard: assigned students, live state badges and today's summary. */
-export const TeacherStudentsView = memo(function TeacherStudentsView({ students, loading, error, onRetry }: TeacherStudentsViewProps) {
+export const TeacherStudentsView = memo(function TeacherStudentsView({
+  students,
+  loading,
+  error,
+  onRetry,
+}: TeacherStudentsViewProps) {
   if (error) {
     return (
       <ErrorBanner
         title="학생 목록을 불러오지 못했습니다"
-        message={error.code === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.' : error.message}
+        message={
+          error.code === 'NETWORK_ERROR' ? '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.' : error.message
+        }
         onRetry={onRetry}
       />
     );
@@ -36,7 +42,7 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
 
   if (loading && !students) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-3xl bg-slate-50 p-6">
         <LoadingState label="담당 학생을 불러오는 중…" />
       </div>
     );
@@ -51,31 +57,59 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
     );
   }
 
+  const studying = students.filter((overview) => overview.activeSessionId).length;
+  const focusing = students.filter(
+    (overview) => overview.activeSessionId && overview.currentState === 'FOCUS_ESTIMATED',
+  ).length;
+  const cell =
+    'flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-4';
+
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-        <p className="text-sm font-medium text-slate-700">
-          담당 학생 <span className="tabular-nums text-slate-500">{students.length}명</span>
-        </p>
-        <p className="text-xs text-slate-500" aria-live="polite">
-          상태는 자동 분석에 따른 추정이며, 실시간으로 갱신됩니다.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <dl className="grid grid-cols-3 gap-2 sm:gap-3" aria-live="polite">
+        {[
+          { label: '담당 학생', value: students.length },
+          { label: '지금 공부 중', value: studying },
+          { label: '집중 추정', value: focusing },
+        ].map((item) => (
+          <div key={item.label} className="rounded-3xl bg-slate-50 px-4 py-5 sm:px-6">
+            <dt className="text-xs font-semibold text-slate-500 sm:text-sm">{item.label}</dt>
+            <dd className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900 tabular-nums sm:text-4xl">
+              {item.value}
+              <span className="ml-0.5 text-base font-bold text-slate-400">명</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
 
       <table className="block w-full md:table">
         <caption className="sr-only">담당 학생 목록과 오늘의 학습 현황</caption>
         <thead className="hidden md:table-header-group">
           <tr>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>학생</th>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>현재 상태</th>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>첫 착석 / 지각</th>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>집중 시간</th>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>자리비움</th>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>비집중 의심</th>
-            <th scope="col" className={`${HEAD} px-4 py-2.5`}>마지막 신호</th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              학생
+            </th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              현재 상태
+            </th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              집중 시간
+            </th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              첫 착석 / 지각
+            </th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              자리비움
+            </th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              비집중 의심
+            </th>
+            <th scope="col" className={`${HEAD} px-4 pb-3`}>
+              마지막 신호
+            </th>
           </tr>
         </thead>
-        <tbody className="block space-y-3 p-3 md:table-row-group md:space-y-0 md:p-0">
+        <tbody className="block space-y-3 md:table-row-group md:space-y-0">
           {students.map((overview) => {
             const { student, today } = overview;
             const href = `/teacher/students/${encodeURIComponent(student.id)}`;
@@ -86,26 +120,34 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
                 key={student.id}
                 data-testid="student-row"
                 data-student-id={student.id}
-                className="block rounded-xl border border-slate-200 bg-white p-4 md:table-row md:rounded-none md:border-0 md:p-0 md:shadow-none"
+                className="block rounded-3xl bg-slate-50 p-5 transition-colors md:table-row md:rounded-none md:bg-transparent md:p-0 md:hover:bg-slate-50"
               >
-                <td className="flex items-start justify-between gap-2 pb-2 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
+                <td className="flex items-center justify-between gap-2 pb-3 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-4">
                   <CellLabel>학생</CellLabel>
-                  <div className="text-right md:text-left">
-                    <Link
-                      href={href}
-                      className="text-sm font-semibold text-slate-900 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+                  <div className="flex items-center gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700 md:flex"
                     >
-                      {student.displayName}
-                    </Link>
-                    <p className="mt-0.5 hidden text-xs text-slate-500 md:block">{student.email ?? '카카오 계정'}</p>
+                      {student.displayName.slice(0, 1)}
+                    </span>
+                    <div className="text-right md:text-left">
+                      <Link
+                        href={href}
+                        className="text-base font-bold text-slate-900 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+                      >
+                        {student.displayName}
+                      </Link>
+                      <p className="mt-0.5 hidden text-xs text-slate-500 md:block">{student.email ?? '카카오 계정'}</p>
+                    </div>
                   </div>
                 </td>
 
-                <td className="flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
+                <td className={cell}>
                   <CellLabel>현재 상태</CellLabel>
-                  <div className="flex flex-col items-end gap-0.5 md:items-start">
+                  <div className="flex flex-col items-end gap-1 md:items-start">
                     <StateBadge testId="student-state" state={overview.currentState ?? 'UNKNOWN'} />
-                    <span className="text-[11px] text-slate-500">
+                    <span className="text-xs text-slate-500">
                       {noSession
                         ? '진행 중인 세션 없음'
                         : overview.currentStateSince
@@ -115,14 +157,21 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
                   </div>
                 </td>
 
-                <td className="flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
+                <td className={cell}>
+                  <CellLabel>집중 시간</CellLabel>
+                  <span className="text-lg font-extrabold tracking-tight text-slate-900 tabular-nums">
+                    {formatDuration(today.totals.focusSeconds)}
+                  </span>
+                </td>
+
+                <td className={cell}>
                   <CellLabel>첫 착석 / 지각</CellLabel>
                   <div className="text-right md:text-left">
-                    <p className="text-sm tabular-nums text-slate-800">
+                    <p className="text-sm font-semibold tabular-nums text-slate-800">
                       {today.firstSeatedAt ? formatSeoulTime(today.firstSeatedAt) : '—'}
                     </p>
                     <p
-                      className={`text-[11px] font-medium ${
+                      className={`text-xs font-semibold ${
                         today.lateStatus === 'LATE'
                           ? 'text-rose-700'
                           : today.lateStatus === 'ON_TIME'
@@ -135,28 +184,23 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
                   </div>
                 </td>
 
-                <td className="flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
-                  <CellLabel>집중 시간</CellLabel>
-                  <span className="text-sm font-medium tabular-nums text-emerald-700">
-                    {formatDuration(today.totals.focusSeconds)}
+                <td className={cell}>
+                  <CellLabel>자리비움</CellLabel>
+                  <span className="text-sm font-semibold tabular-nums text-slate-700">
+                    {formatDuration(today.totals.awaySeconds)}
                   </span>
                 </td>
 
-                <td className="flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
-                  <CellLabel>자리비움</CellLabel>
-                  <span className="text-sm tabular-nums text-rose-700">{formatDuration(today.totals.awaySeconds)}</span>
-                </td>
-
-                <td className="flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
+                <td className={cell}>
                   <CellLabel>비집중 의심</CellLabel>
-                  <span className="text-sm tabular-nums text-amber-700">
+                  <span className="text-sm font-semibold tabular-nums text-slate-700">
                     {formatDuration(today.totals.distractionSeconds)}
                   </span>
                 </td>
 
-                <td className="flex items-center justify-between gap-2 py-1.5 md:table-cell md:border-t md:border-slate-100 md:px-4 md:py-3">
+                <td className={cell}>
                   <CellLabel>마지막 신호</CellLabel>
-                  <span className="text-sm tabular-nums text-slate-600">
+                  <span className="text-sm tabular-nums text-slate-500">
                     {overview.lastHeartbeatAt ? formatSeoulTime(overview.lastHeartbeatAt) : '—'}
                   </span>
                 </td>

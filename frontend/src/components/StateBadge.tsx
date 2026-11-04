@@ -54,6 +54,18 @@ export const STATE_META: Record<ActivityState, StateMeta> = {
   },
 };
 
+/**
+ * Plain wording for the student's own screen (the student reads it at a glance while studying).
+ * Teacher views and the contract keep STATE_META labels. Never a verdict, and not tied to one cause (phone, dozing, …).
+ */
+export const STUDENT_STATE_LABEL: Record<ActivityState, string> = {
+  FOCUS_ESTIMATED: '집중하는 중',
+  DISTRACTION_SUSPECTED: '집중 흐트러짐',
+  AWAY: '자리 비움',
+  UNKNOWN: '미측정',
+  BREAK: '쉬는 중',
+};
+
 export function stateLabel(state: ActivityState | null | undefined): string {
   return state ? STATE_META[state].label : '측정 불가';
 }
@@ -67,10 +79,12 @@ export interface StateBadgeProps {
   size?: 'sm' | 'md';
   /** data-testid for E2E (e.g. student-state). `data-state` is always emitted. */
   testId?: string;
+  /** Overrides the visible label (e.g. STUDENT_STATE_LABEL); colour and pattern stay the same. */
+  label?: string;
   className?: string;
 }
 
-export function StateBadge({ state, size = 'sm', testId, className = '' }: StateBadgeProps) {
+export function StateBadge({ state, size = 'sm', testId, label, className = '' }: StateBadgeProps) {
   const resolved: ActivityState = state ?? 'UNKNOWN';
   const meta = STATE_META[resolved];
   const sizing = size === 'md' ? 'gap-2 px-3 py-1.5 text-sm' : 'gap-1.5 px-2.5 py-1 text-xs';
@@ -83,7 +97,7 @@ export function StateBadge({ state, size = 'sm', testId, className = '' }: State
       className={`inline-flex items-center whitespace-nowrap rounded-full font-medium ${sizing} ${meta.badge} ${className}`}
     >
       <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
-      {meta.label}
+      {label ?? meta.label}
       <span className="sr-only"> (자동 추정 상태)</span>
     </span>
   );

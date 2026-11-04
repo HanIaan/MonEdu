@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { AppShell } from '@/components/AppShell';
 
 export const metadata: Metadata = {
-  title: '개인정보 처리 안내 — Study Monitor',
+  title: '개인정보 처리 안내 — MonEdu',
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
   return (
     <AppShell
       title="개인정보 처리 안내"
-      subtitle="Study Monitor가 무엇을 분석하고, 무엇을 저장하며, 어떤 한계를 가지는지 설명합니다."
+      subtitle="MonEdu가 무엇을 분석하고, 무엇을 저장하며, 어떤 한계를 가지는지 설명합니다."
     >
       <div className="mx-auto max-w-3xl space-y-4">
         <Section title="1. 영상은 기기를 떠나지 않습니다">

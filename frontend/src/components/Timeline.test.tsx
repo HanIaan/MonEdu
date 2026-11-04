@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { makeReport } from '@/features/dashboard/testFixtures';
+import { STUDENT_STATE_LABEL } from './StateBadge';
 import { Timeline } from './Timeline';
 
 function renderTimeline() {
@@ -66,5 +67,27 @@ describe('Timeline', () => {
     renderTimeline();
     const segments = screen.getAllByTestId('timeline-segment');
     expect(segments[0]).toHaveAttribute('aria-label', expect.stringContaining('착석 확인'));
+  });
+
+  it('fills unrecorded time between intervals as not-measured when asked', () => {
+    const report = makeReport();
+    // First interval ends 10 minutes earlier: 00:20–00:30 has no record.
+    const gapped = report.intervals.map((interval, index) =>
+      index === 0 ? { ...interval, endedAt: '2026-11-03T00:20:00Z', durationSeconds: 1200 } : interval,
+    );
+    render(<Timeline intervals={gapped} computedAt={report.computedAt} labels={{ ...STUDENT_STATE_LABEL }} fillGaps />);
+    const gaps = screen.getAllByTestId('timeline-gap');
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toHaveAttribute('aria-label', expect.stringContaining('미측정 (기록 없음)'));
+    expect(gaps[0]).toHaveAttribute('aria-label', expect.stringContaining('10분 0초'));
+    expect(gaps[0]!.parentElement?.style.width).toBe(`${(600 / 3600) * 100}%`);
+    // Recorded intervals are unchanged.
+    expect(screen.getAllByTestId('timeline-segment')).toHaveLength(3);
+  });
+
+  it('keeps gaps empty by default', () => {
+    const report = makeReport();
+    render(<Timeline intervals={report.intervals} computedAt={report.computedAt} />);
+    expect(screen.queryByTestId('timeline-gap')).not.toBeInTheDocument();
   });
 });

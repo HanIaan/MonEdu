@@ -16,7 +16,9 @@ describe('TeacherConnectCard', () => {
 
   it('shows a prominent link prompt when no teacher is linked', async () => {
     renderCard();
-    expect(await screen.findByText('아직 연결된 선생님이 없습니다. 선생님의 초대 코드를 입력하면 학습 현황이 연결됩니다.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('아직 연결된 선생님이 없습니다. 선생님의 초대 코드를 입력하면 학습 현황이 연결됩니다.'),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('my-teacher')).toBeNull();
   });
 
@@ -54,14 +56,14 @@ describe('TeacherConnectCard', () => {
     join.mockRejectedValue(new ApiError(429, 'TOO_MANY_ATTEMPTS', 'slow down'));
     fireEvent.click(screen.getByTestId('teacher-join-submit'));
     await waitFor(() => {
-      expect(screen.getByTestId('teacher-join-error')).toHaveTextContent('시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.');
+      expect(screen.getByTestId('teacher-join-error')).toHaveTextContent(
+        '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+      );
     });
   });
 
   it('shows the Retry-After wait hint for throttled joins', async () => {
-    vi.spyOn(api, 'joinTeacher').mockRejectedValue(
-      new ApiError(429, 'TOO_MANY_ATTEMPTS', 'slow down', null, 90),
-    );
+    vi.spyOn(api, 'joinTeacher').mockRejectedValue(new ApiError(429, 'TOO_MANY_ATTEMPTS', 'slow down', null, 90));
     renderCard();
 
     const input = await screen.findByTestId('teacher-join-input');

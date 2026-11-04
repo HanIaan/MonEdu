@@ -18,10 +18,7 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
 
   return (
     <RequireRole role="TEACHER">
-      <AppShell
-        title="학생 상세"
-        subtitle="선택한 날짜의 상태 타임라인과 세션 기록입니다. 모든 상태는 자동 분석에 따른 추정입니다."
-      >
+      <AppShell>
         <StudentDetailScreen studentId={studentId} date={date} />
       </AppShell>
     </RequireRole>

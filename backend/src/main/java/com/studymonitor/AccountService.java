@@ -14,8 +14,9 @@ import static org.springframework.http.HttpStatus.*;
 public class AccountService {
     private final Store store; private final JdbcTemplate db; private final Clock clock;
     private final PasswordEncoder passwords; private final AccountPolicy policy; private final AppConfig.Auth settings;
-    public AccountService(Store store,JdbcTemplate db,Clock clock,PasswordEncoder passwords,AccountPolicy policy,AppConfig.Auth settings) {
-        this.store=store; this.db=db; this.clock=clock; this.passwords=passwords; this.policy=policy; this.settings=settings;
+    private final AuthThrottle throttle;
+    public AccountService(Store store,JdbcTemplate db,Clock clock,PasswordEncoder passwords,AccountPolicy policy,AppConfig.Auth settings,AuthThrottle throttle) {
+        this.store=store; this.db=db; this.clock=clock; this.passwords=passwords; this.policy=policy; this.settings=settings; this.throttle=throttle;
     }
     @Transactional
     public Domain.Account signup(SignupRequest request) {
@@ -47,5 +48,32 @@ public class AccountService {
         db.update("insert into user_identities(provider,provider_user_id,user_id,created_at) values ('KAKAO',?,?,?)",
             kakaoId,user.id,java.sql.Timestamp.from(clock.instant()));
         return user;
+    }
+    /**
+     * Deletes the account and everything it owns: study sessions, events and intervals (student),
+     * invite codes (teacher), teacher-student links, refresh tokens and the Kakao identity.
+     * Other accounts are untouched. The Kakao app connection on Kakao's side is not unlinked.
+     */
+    @Transactional(noRollbackFor=Failure.class)
+    public void delete(UUID id,DeleteAccountRequest request) {
+        Domain.Account user=store.lockAccount(id);
+        if(user==null) throw fail(UNAUTHORIZED,"UNAUTHORIZED","Account no longer exists");
+        if(user.passwordHash!=null) {
+            throttle.checkEmail(user.email);
+            boolean valid;
+            try { valid=request.password()!=null && passwords.matches(request.password(),user.passwordHash); }
+            catch(IllegalArgumentException invalidPassword) { valid=false; }
+            if(!valid) { throttle.failed(user.email); throw field("password","비밀번호가 올바르지 않습니다."); }
+            throttle.succeeded(user.email);
+        }
+        // No ON DELETE CASCADE in the schema: children first (intervals reference events).
+        db.update("delete from activity_intervals where student_id=?",id);
+        db.update("delete from monitoring_events where student_id=?",id);
+        db.update("delete from study_sessions where student_id=?",id);
+        db.update("delete from teacher_students where teacher_id=? or student_id=?",id,id);
+        db.update("delete from teacher_invite_codes where teacher_id=?",id);
+        db.update("delete from refresh_tokens where user_id=?",id);
+        db.update("delete from user_identities where user_id=?",id);
+        store.remove(user); store.flush();
     }
 }

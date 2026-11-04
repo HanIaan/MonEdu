@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { AppShell } from '@/components/AppShell';
 
 export const metadata: Metadata = {
-  title: '이용약관 — Study Monitor',
+  title: '이용약관 — MonEdu',
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -20,7 +20,7 @@ const DRAFT_NOTICE = '초안 — 정식 운영 전 법률 검토가 필요합니
 
 export default function TermsPage() {
   return (
-    <AppShell title="이용약관" subtitle="Study Monitor 서비스 이용에 관한 기본 약속입니다.">
+    <AppShell title="이용약관" subtitle="MonEdu 서비스 이용에 관한 기본 약속입니다.">
       <div className="mx-auto max-w-3xl space-y-4">
         <div
           role="note"
@@ -33,7 +33,7 @@ export default function TermsPage() {
 
         <Section title="1. 목적">
           <p>
-            본 약관은 Study Monitor(이하 “서비스”)의 이용 조건과 절차, 이용자와 서비스 제공자의 권리·의무를
+            본 약관은 MonEdu(이하 “서비스”)의 이용 조건과 절차, 이용자와 서비스 제공자의 권리·의무를
             정하는 것을 목적으로 합니다.
           </p>
         </Section>

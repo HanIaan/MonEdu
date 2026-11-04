@@ -40,14 +40,14 @@ export const StatCard = memo(function StatCard({
   className = '',
 }: StatCardProps) {
   const hasSeconds = seconds !== undefined;
-  const valueSize = size === 'lg' ? 'text-3xl sm:text-4xl' : 'text-2xl';
+  const valueSize = size === 'lg' ? 'text-4xl sm:text-5xl font-extrabold' : 'text-xl font-bold';
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <dt className="text-xs font-medium tracking-wide text-slate-500">{label}</dt>
+    <div className={`rounded-3xl bg-slate-50 px-5 py-4 ${className}`}>
+      <dt className="text-xs font-semibold text-slate-500">{label}</dt>
       <dd
         data-testid={testId}
         data-seconds={hasSeconds ? (seconds === null ? '' : Math.max(0, Math.floor(seconds))) : undefined}
-        className={`mt-1.5 ${valueSize} font-semibold tabular-nums tracking-tight ${TONE_VALUE[tone]}`}
+        className={`mt-1 ${valueSize} tabular-nums tracking-tight ${TONE_VALUE[tone]}`}
       >
         {value}
       </dd>

@@ -60,16 +60,14 @@ function renderScreen(session: StudySessionApi) {
 }
 
 describe('StudentStudyScreen', () => {
-  it('requires privacy consent before starting, then calls start() with no video argument', () => {
+  it('starts the camera only from the start click (consent is given at sign-up), with no video argument', () => {
     const { session, start } = makeSession();
     renderScreen(session);
 
-    const startButton = screen.getByTestId('start-session');
-    expect(startButton).toBeDisabled();
-    fireEvent.click(startButton);
+    // Nothing starts on render; consent is not asked again here.
     expect(start).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByTestId('privacy-consent'));
+    expect(screen.getByTestId('privacy-consent')).toBeChecked();
+    const startButton = screen.getByTestId('start-session');
     expect(startButton).toBeEnabled();
     fireEvent.click(startButton);
 
@@ -115,22 +113,42 @@ describe('StudentStudyScreen', () => {
   });
 
   it('drives break, pause and end through the session API', () => {
-    const { session, startBreak, pauseMonitoring, end } = makeSession(
+    const { session, startBreak, endBreak, pauseMonitoring, resumeMonitoring, end } = makeSession(
       { status: 'active' },
       { cameraStatus: 'active', modelStatus: 'ready', engineState: 'FOCUS_ESTIMATED' },
     );
     renderScreen(session);
 
+    // A break also turns the camera off, after the break is declared.
     fireEvent.click(screen.getByTestId('break-start'));
     expect(startBreak).toHaveBeenCalledTimes(1);
+    expect(pauseMonitoring).toHaveBeenCalledTimes(1);
+    expect(startBreak.mock.invocationCallOrder[0]).toBeLessThan(pauseMonitoring.mock.invocationCallOrder[0]!);
 
     fireEvent.click(screen.getByTestId('pause-monitoring'));
-    expect(pauseMonitoring).toHaveBeenCalledTimes(1);
+    expect(pauseMonitoring).toHaveBeenCalledTimes(2);
+    expect(endBreak).not.toHaveBeenCalled();
+    expect(resumeMonitoring).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('end-session'));
     expect(end).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('confirm-end'));
     expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends a break by turning the camera back on', () => {
+    const { session, endBreak, resumeMonitoring } = makeSession(
+      { status: 'active' },
+      { cameraStatus: 'stopped', modelStatus: 'idle', engineState: 'BREAK', onBreak: true, paused: true },
+    );
+    renderScreen(session);
+
+    fireEvent.click(screen.getByTestId('break-end'));
+    expect(endBreak).toHaveBeenCalledTimes(1);
+    expect(resumeMonitoring).toHaveBeenCalledTimes(1);
+    expect(endBreak.mock.invocationCallOrder[0]).toBeLessThan(resumeMonitoring.mock.invocationCallOrder[0]!);
+    // No resume button competes with "다시 공부하기" during a break.
+    expect(screen.queryByTestId('resume-monitoring')).not.toBeInTheDocument();
   });
 
   it('resumes monitoring with no video argument', () => {

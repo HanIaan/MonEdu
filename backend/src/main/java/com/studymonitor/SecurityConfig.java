@@ -58,7 +58,7 @@ public class SecurityConfig {
         cors.setAllowedOrigins(origins);
         cors.setAllowCredentials(true);
         cors.setExposedHeaders(List.of("Retry-After"));
-        cors.setAllowedMethods(List.of("GET","POST","OPTIONS"));
+        cors.setAllowedMethods(List.of("GET","POST","DELETE","OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization","Content-Type","Accept"));
         UrlBasedCorsConfigurationSource source=new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/**",cors);
         JwtGrantedAuthoritiesConverter authorities=new JwtGrantedAuthoritiesConverter();

@@ -254,6 +254,33 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [me]
+      operationId: deleteMe
+      description: |
+        v1.3 account deletion (STUDENT or TEACHER). Password accounts must send their current password;
+        Kakao-only accounts send `confirm: true` only. Deletes the account and everything it owns (study
+        sessions, monitoring events, activity intervals, teacher-student links, invite codes, refresh
+        tokens, the Kakao identity) in one transaction and clears the `sm_rt` cookie. Wrong passwords
+        share the login failure lock (5 failures → 429 for 15 minutes). See auth.md §7.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteAccountRequest' }
+      responses:
+        '204': { description: Account deleted; `sm_rt` cleared }
+        '400':
+          description: '`VALIDATION_FAILED` — `errors[].field` is `password` (wrong or missing) or `confirm`'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: '`TOO_MANY_ATTEMPTS` after repeated wrong passwords (`Retry-After` seconds)'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
 
   /api/v1/study-sessions:
     post:
@@ -681,6 +708,18 @@ components:
         displayName: { type: string, minLength: 1, maxLength: 30 }
         role: { $ref: '#/components/schemas/Role' }
         agreements: { $ref: '#/components/schemas/Agreements' }
+
+    DeleteAccountRequest:
+      type: object
+      required: [confirm]
+      properties:
+        password:
+          type: string
+          maxLength: 1024
+          description: Current password. Required for password accounts; ignored for Kakao-only accounts.
+        confirm:
+          type: boolean
+          description: Must be `true`.
 
     AuthProviders:
       type: object

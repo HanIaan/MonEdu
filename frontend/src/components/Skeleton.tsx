@@ -16,7 +16,7 @@ export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
 
 export function FullPageLoading({ label = '불러오는 중…' }: { label?: string }) {
   return (
-    <div className="grid min-h-screen place-items-center bg-slate-50 px-4">
+    <div className="grid min-h-screen place-items-center bg-white px-4">
       <div role="status" className="flex items-center gap-3 text-sm text-slate-600">
         <Spinner className="h-5 w-5" />
         <span>{label}</span>
@@ -35,7 +35,7 @@ export function LoadingState({ label = '불러오는 중…' }: { label?: string
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div aria-hidden="true" className={`animate-pulse rounded-lg bg-slate-200/70 ${className}`} />;
+  return <div aria-hidden="true" className={`animate-pulse rounded-2xl bg-slate-100 ${className}`} />;
 }
 
 /** Skeleton grid used while a dashboard report loads. */
@@ -51,8 +51,8 @@ export function CardSkeletonGrid({ count = 6 }: { count?: number }) {
 
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-      <p className="text-sm font-medium text-slate-700">{title}</p>
+    <div className="rounded-3xl bg-slate-50 px-6 py-14 text-center">
+      <p className="text-base font-bold text-slate-900">{title}</p>
       {description ? <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">{description}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>

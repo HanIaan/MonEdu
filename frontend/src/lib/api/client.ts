@@ -4,6 +4,7 @@
  */
 import type {
   AuthProviders,
+  DeleteAccountRequest,
   EndSessionRequest,
   ErrorCode,
   HeartbeatRequest,
@@ -82,7 +83,7 @@ export function refreshAccessToken(): Promise<boolean> {
 }
 
 export async function apiFetch<T>(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   body?: unknown,
   opts: RequestOptions = {},
@@ -105,7 +106,7 @@ export async function apiFetch<T>(
   }
 }
 
-async function rawFetch<T>(method: 'GET' | 'POST', path: string, body: unknown, opts: RequestOptions): Promise<T> {
+async function rawFetch<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body: unknown, opts: RequestOptions): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const token = opts.anonymous ? null : getToken();
@@ -172,6 +173,9 @@ export const api = {
     apiFetch<TeacherLink>('POST', '/api/v1/me/teachers', { inviteCode }, o),
 
   getMe: (o?: RequestOptions) => apiFetch<User>('GET', '/api/v1/me', undefined, o),
+  /** Deletes the signed-in account; credentials so the `sm_rt` clearing cookie is applied. */
+  deleteMe: (req: DeleteAccountRequest, o?: RequestOptions) =>
+    apiFetch<void>('DELETE', '/api/v1/me', req, { ...o, withCredentials: true }),
 
   startSession: (req: StartSessionRequest, o?: RequestOptions) =>
     apiFetch<StudySession>('POST', '/api/v1/study-sessions', req, o),

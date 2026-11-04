@@ -47,7 +47,7 @@ export const KakaoLoginButton = memo(function KakaoLoginButton() {
         type="button"
         data-testid="login-kakao"
         onClick={() => window.location.assign(KAKAO_START_URL)}
-        className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-black shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+        className="flex w-full items-center justify-center gap-2 h-13 rounded-xl px-6 text-base font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
         style={{ backgroundColor: '#FEE500' }}
       >
         <KakaoSymbol />

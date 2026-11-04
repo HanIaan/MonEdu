@@ -7,7 +7,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, refreshAccessToken } from './client';
 import { getToken, onUnauthorized, setToken } from './token';
-import type { KakaoCompleteRequest, LoginResponse, SignupRequest, User } from './types';
+import type { DeleteAccountRequest, KakaoCompleteRequest, LoginResponse, SignupRequest, User } from './types';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
 
@@ -22,6 +22,8 @@ interface AuthContextValue {
   restoreSession(): Promise<User | null>;
   /** Revokes the refresh token on the server, then clears local state. Never throws. */
   logout(): Promise<void>;
+  /** Deletes the account on the server, then signs out locally. Errors (wrong password…) propagate. */
+  deleteAccount(req: DeleteAccountRequest): Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -106,9 +108,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous');
   }, []);
 
+  const deleteAccount = useCallback(async (req: DeleteAccountRequest) => {
+    await api.deleteMe(req);
+    setToken(null);
+    setUser(null);
+    setStatus('anonymous');
+  }, []);
+
   const value = useMemo(
-    () => ({ status, user, login, signup, completeKakaoSignup, restoreSession, logout }),
-    [status, user, login, signup, completeKakaoSignup, restoreSession, logout],
+    () => ({ status, user, login, signup, completeKakaoSignup, restoreSession, logout, deleteAccount }),
+    [status, user, login, signup, completeKakaoSignup, restoreSession, logout, deleteAccount],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
