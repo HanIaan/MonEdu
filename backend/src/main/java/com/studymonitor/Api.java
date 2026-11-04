@@ -22,6 +22,19 @@ public final class Api {
     public record LoginRequest(@NotBlank @Email @Size(max=254) String email,
                                @NotBlank @Size(max=128) String password) {}
     public record LoginResponse(String accessToken, String tokenType, long expiresIn, User user) {}
+    public record Agreements(@NotNull(message="이용약관에 동의해 주세요.") @AssertTrue(message="이용약관에 동의해 주세요.") Boolean terms,
+                             @NotNull(message="개인정보 처리방침에 동의해 주세요.") @AssertTrue(message="개인정보 처리방침에 동의해 주세요.") Boolean privacy) {}
+    public record SignupRequest(@NotBlank(message="이메일을 입력해 주세요.") @Email(message="올바른 이메일을 입력해 주세요.") @Size(max=254,message="이메일은 254자 이하여야 합니다.") String email,
+                                String password, String displayName, @NotNull(message="역할을 선택해 주세요.") Role role,
+                                @NotNull(message="약관 동의가 필요합니다.") @Valid Agreements agreements) {}
+    public record KakaoCompleteRequest(String displayName, @NotNull(message="역할을 선택해 주세요.") Role role,
+                                       @NotNull(message="약관 동의가 필요합니다.") @Valid Agreements agreements) {}
+    public record AuthProviders(boolean password, boolean kakao) {}
+    public record KakaoPending(String nickname) {}
+    public record InviteCode(String code, Instant createdAt) {}
+    public record JoinTeacherRequest(@NotBlank(message="초대 코드를 입력해 주세요.") @Size(max=32,message="초대 코드는 32자 이하여야 합니다.") String inviteCode) {}
+    public record TeacherSummary(UUID id, String displayName) {}
+    public record TeacherLink(TeacherSummary teacher, Instant linkedAt) {}
     public record ClientInfo(@Size(max=512) String userAgent, @Size(max=64) String engineVersion,
                              Backend inferenceBackend) {}
     public record StartRequest(@NotNull Instant clientStartedAt, @Valid ClientInfo clientInfo) {}

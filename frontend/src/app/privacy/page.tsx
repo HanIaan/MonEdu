@@ -35,8 +35,18 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="2. 저장되는 정보">
+          <p className="font-medium text-slate-700">계정 정보</p>
           <ul className="list-disc space-y-1 pl-5">
-            <li>로그인 계정 정보(이메일, 표시 이름, 역할)</li>
+            <li>이메일 — 비밀번호로 가입한 경우에만 저장됩니다.</li>
+            <li>표시 이름, 역할(학생 / 선생님)</li>
+            <li>비밀번호 해시 — 비밀번호로 가입한 경우에만 저장되며, 원래 비밀번호는 저장되지 않습니다.</li>
+            <li>카카오 회원번호 — 카카오로 가입한 경우에만 저장됩니다. 카카오 이메일, 프로필 사진, 액세스 토큰은 저장하지 않습니다.</li>
+            <li>약관 동의 시각(이용약관·개인정보 처리방침)과 동의한 약관 버전</li>
+            <li>로그인 유지용 토큰 해시 — 브라우저의 쿠키에 있는 로그인 유지 토큰은 해시 형태로만 저장되며, 원문은 서버에 보관하지 않습니다.</li>
+          </ul>
+
+          <p className="pt-2 font-medium text-slate-700">학습 기록</p>
+          <ul className="list-disc space-y-1 pl-5">
             <li>학습 세션의 시작·종료 시각</li>
             <li>상태 변화 시각과 상태 값(집중 추정 / 비집중 의심 / 자리비움 / 측정 불가 / 휴식)</li>
             <li>담당 교사와 학생의 연결 관계</li>
@@ -73,7 +83,13 @@ export default function PrivacyPage() {
           <p>개인정보 처리와 관련한 문의는 담당 교사 또는 학교 관리자에게 전달해 주세요.</p>
         </Section>
 
-        <div className="pt-2 text-center">
+        <div className="flex flex-wrap justify-center gap-2 pt-2">
+          <Link
+            href="/terms"
+            className="inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          >
+            이용약관
+          </Link>
           <Link
             href="/"
             className="inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"

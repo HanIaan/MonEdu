@@ -46,7 +46,7 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
     return (
       <EmptyState
         title="배정된 학생이 없습니다"
-        description="관리자에게 담당 학생 배정을 요청해 주세요. 배정되면 이곳에 학생별 현황이 표시됩니다."
+        description="위의 초대 코드를 학생에게 알려 주세요. 학생이 가입 후 이 코드를 입력하면 이곳에 연결됩니다."
       />
     );
   }
@@ -97,7 +97,7 @@ export const TeacherStudentsView = memo(function TeacherStudentsView({ students,
                     >
                       {student.displayName}
                     </Link>
-                    <p className="mt-0.5 hidden text-xs text-slate-500 md:block">{student.email}</p>
+                    <p className="mt-0.5 hidden text-xs text-slate-500 md:block">{student.email ?? '카카오 계정'}</p>
                   </div>
                 </td>
 

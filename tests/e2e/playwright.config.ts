@@ -63,6 +63,13 @@ export default defineConfig({
   ],
   webServer: [
     {
+      // v1.3: stand-in for kauth/kapi.kakao.com (E2E only)
+      command: 'node scripts/mock-kakao.mjs',
+      url: 'http://localhost:4810/__mock/log',
+      reuseExistingServer: true,
+      timeout: 15_000,
+    },
+    {
       command: './scripts/start-backend.sh',
       url: `${API}/actuator/health`,
       reuseExistingServer: true,

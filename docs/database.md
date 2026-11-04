@@ -16,6 +16,43 @@ No images, video, face crops, landmarks or embeddings are stored anywhere.
 | role | varchar(16) | CHECK in (`STUDENT`,`TEACHER`) |
 | created_at | timestamptz | |
 
+v1.3 (V3 migration, additive): `email` and `password_hash` become nullable (Kakao-only accounts);
+new nullable columns `terms_agreed_at`, `privacy_agreed_at` (timestamptz), `agreements_version` (varchar(32)).
+App rule: a password account has both email and password_hash. Unique email stays (NULLs allowed).
+
+### user_identities (v1.3)
+| column | type | notes |
+|---|---|---|
+| provider | varchar(16) | CHECK in (`KAKAO`) |
+| provider_user_id | varchar(64) | Kakao numeric id as text |
+| user_id | uuid FK users | |
+| created_at | timestamptz | |
+PK (`provider`, `provider_user_id`); index on `user_id`. No Kakao token, email or image is stored.
+
+### refresh_tokens (v1.3)
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK users | |
+| family_id | uuid | rotation chain; reuse outside grace revokes the family |
+| token_hash | char(64) | hex SHA-256 of the token, UNIQUE (the token itself is never stored) |
+| issued_at | timestamptz | |
+| expires_at | timestamptz | |
+| revoked_at | timestamptz null | |
+| replaced_by | uuid null | next token in the family |
+| user_agent | varchar(256) null | diagnostics only |
+Index (`user_id`), (`family_id`). Expired rows may be purged by a scheduled job (deleting only rows
+expired for > 7 days).
+
+### teacher_invite_codes (v1.3)
+| column | type | notes |
+|---|---|---|
+| code | varchar(8) PK | alphabet in docs/contracts/auth.md §5; never reused |
+| teacher_id | uuid FK users | |
+| created_at | timestamptz | |
+| revoked_at | timestamptz null | |
+Partial UNIQUE (`teacher_id`) WHERE `revoked_at IS NULL` — one active code per teacher.
+
 ### teacher_students
 | column | type | notes |
 |---|---|---|

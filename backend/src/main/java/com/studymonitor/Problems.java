@@ -18,9 +18,18 @@ public class Problems {
     public static class Failure extends RuntimeException {
         final HttpStatus status;
         final String code;
+        String field;
+        Long retryAfter;
         public Failure(HttpStatus status, String code, String detail) { super(detail); this.status=status; this.code=code; }
     }
     public static Failure fail(HttpStatus status, String code, String detail) { return new Failure(status,code,detail); }
+    public static Failure field(String field,String message) {
+        Failure failure=fail(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED",message); failure.field=field; return failure;
+    }
+    public static Failure throttled(long seconds) {
+        Failure failure=fail(HttpStatus.TOO_MANY_REQUESTS,"TOO_MANY_ATTEMPTS","잠시 후 다시 시도해 주세요.");
+        failure.retryAfter=Math.max(1,seconds); return failure;
+    }
     public static ProblemDetail detail(HttpStatus status, String code, String message) {
         ProblemDetail p=ProblemDetail.forStatusAndDetail(status,message);
         p.setProperty("code",code);
@@ -33,8 +42,10 @@ public class Problems {
     @ExceptionHandler(Failure.class)
     ResponseEntity<ProblemDetail> failure(Failure e,HttpServletRequest request) {
         ProblemDetail p=detail(e.status,e.code,e.getMessage());
-        if(e.code.equals("VALIDATION_FAILED")) p.setProperty("errors",List.of(Map.of("field","body","message",e.getMessage())));
-        return response(p,request);
+        if(e.code.equals("VALIDATION_FAILED")) p.setProperty("errors",List.of(Map.of("field",Objects.toString(e.field,"body"),"message",e.getMessage())));
+        var response=response(p,request);
+        if(e.retryAfter!=null) return ResponseEntity.status(e.status).headers(response.getHeaders()).header("Retry-After",e.retryAfter.toString()).body(p);
+        return response;
     }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ProblemDetail> validation(MethodArgumentNotValidException e,HttpServletRequest request) {
@@ -45,7 +56,7 @@ public class Problems {
     @ExceptionHandler({HttpMessageNotReadableException.class,MethodArgumentTypeMismatchException.class,ConstraintViolationException.class})
     ResponseEntity<ProblemDetail> malformed(Exception e,HttpServletRequest request) {
         ProblemDetail p=detail(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","Malformed or invalid request value");
-        p.setProperty("errors",List.of(Map.of("field",e instanceof MethodArgumentTypeMismatchException m ? m.getName() : "body","message","Malformed or invalid value")));
+        p.setProperty("errors",List.of(Map.of("field",e instanceof MethodArgumentTypeMismatchException m ? m.getName() : "body","message","요청 값을 올바르게 입력해 주세요.")));
         return response(p,request);
     }
     @ExceptionHandler(AccessDeniedException.class)

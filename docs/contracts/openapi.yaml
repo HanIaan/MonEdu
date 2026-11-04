@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Study Monitor API
-  version: 1.0.0
+  version: 1.3.0
   description: |
     Contract-first API for Study Monitor (owner: C0 Coordinator).
     Changes require a coordinator-approved contract change request.
@@ -12,7 +12,9 @@ info:
     - `date` path params are Asia/Seoul local calendar dates (`YYYY-MM-DD`).
     - Durations are integer seconds.
     - Errors use RFC 9457 `application/problem+json` with an extra `code` field (see `Problem`).
-    - Auth: `Authorization: Bearer <JWT>` from `POST /api/v1/auth/login`.
+    - Auth: `Authorization: Bearer <JWT>` from `POST /api/v1/auth/login` (or signup / refresh /
+      kakao complete). v1.3: a rotating refresh token travels only in the HttpOnly cookie `sm_rt`
+      (Path=/api/v1/auth); see docs/contracts/auth.md for tokens, throttling, Kakao and invite rules.
     - No video, image, face crop or embedding is ever sent to this API.
 servers:
   - url: http://localhost:8080
@@ -20,6 +22,7 @@ security:
   - bearerAuth: []
 tags:
   - name: auth
+  - name: invites
   - name: sessions
   - name: me
   - name: teacher
@@ -38,12 +41,207 @@ paths:
             schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
-          description: Authenticated
+          description: Authenticated. v1.3 also sets the refresh cookie `sm_rt`.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoginResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/signup:
+    post:
+      tags: [auth]
+      operationId: signup
+      security: []
+      description: Password sign-up (v1.3). Logs the new user in. Password policy in docs/contracts/auth.md §1.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignupRequest' }
+      responses:
+        '201':
+          description: Account created and authenticated
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshToken
+      security: [ { refreshCookie: [] } ]
+      description: Rotates the refresh cookie and returns a new access token. Reuse of a rotated token revokes its family.
+      responses:
+        '200':
+          description: New access token
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      security: [ { refreshCookie: [] } ]
+      description: Revokes the refresh-token family of the presented cookie and clears it. 204 even without a cookie.
+      responses:
+        '204':
+          description: Logged out
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+
+  /api/v1/auth/providers:
+    get:
+      tags: [auth]
+      operationId: getAuthProviders
+      security: []
+      responses:
+        '200':
+          description: Which login methods are enabled on this server
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthProviders' }
+
+  /api/v1/auth/kakao/start:
+    get:
+      tags: [auth]
+      operationId: kakaoStart
+      security: []
+      description: Top-level navigation only. Sets the `sm_oauth` state cookie and redirects to Kakao.
+      responses:
+        '302': { description: Redirect to the Kakao authorize URL }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/auth/kakao/callback:
+    get:
+      tags: [auth]
+      operationId: kakaoCallback
+      security: []
+      description: |
+        Kakao redirect URI. Always answers 302 to the frontend (docs/contracts/auth.md §4):
+        `/auth/kakao/done` (existing user, sets `sm_rt`), `/signup/kakao` (new user, sets `sm_signup`),
+        `/login?error=kakao_cancelled` or `/login?error=kakao_failed`. Never puts tokens in a URL.
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        '302': { description: Redirect to the frontend }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/auth/kakao/pending:
+    get:
+      tags: [auth]
+      operationId: kakaoPending
+      security: [ { signupTicketCookie: [] } ]
+      responses:
+        '200':
+          description: Pending Kakao sign-up (for prefilling the form)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KakaoPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/auth/kakao/complete:
+    post:
+      tags: [auth]
+      operationId: kakaoComplete
+      security: [ { signupTicketCookie: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KakaoCompleteRequest' }
+      responses:
+        '201':
+          description: Account created (or the existing Kakao account) and authenticated
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/teacher/invite-code:
+    get:
+      tags: [invites]
+      operationId: getInviteCode
+      description: The teacher's active invite code (created on first call). TEACHER only.
+      responses:
+        '200':
+          description: Active invite code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InviteCode' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/teacher/invite-code/rotate:
+    post:
+      tags: [invites]
+      operationId: rotateInviteCode
+      description: Revokes the active code and issues a new one. Existing links stay. TEACHER only.
+      responses:
+        '200':
+          description: New invite code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InviteCode' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/me/teachers:
+    get:
+      tags: [invites]
+      operationId: listMyTeachers
+      description: Teachers this student is linked to, oldest first. STUDENT only.
+      responses:
+        '200':
+          description: Linked teachers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TeacherLink' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [invites]
+      operationId: joinTeacher
+      description: Link to a teacher with an invite code. Idempotent (already linked → 200 with the existing link). STUDENT only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JoinTeacherRequest' }
+      responses:
+        '200':
+          description: Linked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeacherLink' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /api/v1/me:
     get:
@@ -287,6 +485,21 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: sm_rt
+    signupTicketCookie:
+      type: apiKey
+      in: cookie
+      name: sm_signup
+
+  headers:
+    RefreshCookie:
+      description: |
+        `sm_rt=<token>; HttpOnly; SameSite=Lax; Path=/api/v1/auth; Max-Age=<REFRESH_TTL>[; Secure]`
+        (cleared with Max-Age=0 on logout and on any refresh 401).
+      schema: { type: string }
 
   parameters:
     SessionId:
@@ -323,7 +536,16 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     Conflict:
-      description: Sequencing / idempotency / session-state conflict
+      description: Sequencing / idempotency / session-state conflict / email already registered
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Throttled (TOO_MANY_ATTEMPTS). See docs/contracts/auth.md §3.
+      headers:
+        Retry-After:
+          description: Seconds until the next attempt is allowed
+          schema: { type: integer }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -389,6 +611,10 @@ components:
         - EVENT_ID_CONFLICT
         - CLOCK_SKEW
         - INTERNAL_ERROR
+        - EMAIL_TAKEN
+        - TOO_MANY_ATTEMPTS
+        - INVITE_CODE_INVALID
+        - PROVIDER_DISABLED
 
     Problem:
       type: object
@@ -415,7 +641,10 @@ components:
       required: [id, email, displayName, role]
       properties:
         id: { type: string, format: uuid }
-        email: { type: string, format: email }
+        email:
+          type: [string, 'null']
+          format: email
+          description: v1.3 — null for Kakao-only accounts
         displayName: { type: string }
         role: { $ref: '#/components/schemas/Role' }
 
@@ -434,6 +663,69 @@ components:
         tokenType: { type: string, enum: [Bearer] }
         expiresIn: { type: integer, description: Seconds until expiry }
         user: { $ref: '#/components/schemas/User' }
+
+    Agreements:
+      type: object
+      required: [terms, privacy]
+      properties:
+        terms: { type: boolean, const: true, description: 이용약관 동의 }
+        privacy: { type: boolean, const: true, description: 개인정보 처리방침 동의 }
+
+    SignupRequest:
+      type: object
+      required: [email, password, displayName, role, agreements]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 8, maxLength: 64, description: Policy in docs/contracts/auth.md §1 }
+        displayName: { type: string, minLength: 1, maxLength: 30 }
+        role: { $ref: '#/components/schemas/Role' }
+        agreements: { $ref: '#/components/schemas/Agreements' }
+
+    AuthProviders:
+      type: object
+      required: [password, kakao]
+      properties:
+        password: { type: boolean, description: Email/password sign-up and login }
+        kakao: { type: boolean, description: Kakao login is configured on this server }
+
+    KakaoPending:
+      type: object
+      required: [nickname]
+      properties:
+        nickname: { type: [string, 'null'], description: Kakao profile nickname, if the user consented }
+
+    KakaoCompleteRequest:
+      type: object
+      required: [displayName, role, agreements]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 30 }
+        role: { $ref: '#/components/schemas/Role' }
+        agreements: { $ref: '#/components/schemas/Agreements' }
+
+    InviteCode:
+      type: object
+      required: [code, createdAt]
+      properties:
+        code: { type: string, pattern: '^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$' }
+        createdAt: { type: string, format: date-time }
+
+    JoinTeacherRequest:
+      type: object
+      required: [inviteCode]
+      properties:
+        inviteCode: { type: string, minLength: 1, maxLength: 32, description: Normalised server-side (upper-case, spaces and '-' removed) }
+
+    TeacherLink:
+      type: object
+      required: [teacher, linkedAt]
+      properties:
+        teacher:
+          type: object
+          required: [id, displayName]
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+        linkedAt: { type: string, format: date-time }
 
     StartSessionRequest:
       type: object

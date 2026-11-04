@@ -14,11 +14,14 @@ public final class Domain {
     @Entity(name="Account") @Table(name="users")
     public static class Account {
         @Id public UUID id;
-        @Column(nullable=false, length=254) public String email;
-        @Column(name="password_hash", nullable=false, length=100) public String passwordHash;
+        @Column(length=254) public String email;
+        @Column(name="password_hash", length=100) public String passwordHash;
         @Column(name="display_name", nullable=false, length=100) public String displayName;
         @Enumerated(EnumType.STRING) @Column(nullable=false, length=16) public Role role;
         @Column(name="created_at", nullable=false) public Instant createdAt;
+        @Column(name="terms_agreed_at") public Instant termsAgreedAt;
+        @Column(name="privacy_agreed_at") public Instant privacyAgreedAt;
+        @Column(name="agreements_version", length=32) public String agreementsVersion;
         public User view() { return new User(id, email, displayName, role); }
     }
     @Embeddable
