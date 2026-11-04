@@ -269,6 +269,12 @@ class BackendIntegrationTests {
             UUID.randomUUID(),next.id(),STUDENT,java.sql.Timestamp.from(s.startedAt().plusSeconds(10)),java.sql.Timestamp.from(s.startedAt().plusSeconds(20)),java.sql.Timestamp.from(clock.instant())))
             .isInstanceOf(DataIntegrityViolationException.class).hasMessageContaining("activity_intervals_no_overlap");
     }
+    @Test void drowsinessSuspectedIsAcceptedAndStored() {
+        Session s=start(); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED); clock.advance(20);
+        change(s,2,State.DISTRACTION_SUSPECTED,Reason.DROWSINESS_SUSPECTED);
+        assertThat(jdbc.queryForObject("select reason from activity_intervals where session_id=? and ended_at is null",String.class,s.id())).isEqualTo("DROWSINESS_SUSPECTED");
+        assertThat(jdbc.queryForObject("select count(*) from monitoring_events where session_id=? and reason='DROWSINESS_SUSPECTED'",Integer.class,s.id())).isEqualTo(1);
+    }
     @Test void totalsAndStreaksUseElapsedTimeAcrossAllStates() {
         Session s=start(); clock.advance(10); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
         clock.advance(20); heartbeat(s,true); clock.advance(10); change(s,2,State.DISTRACTION_SUSPECTED,Reason.PHONE_SUSPECTED);

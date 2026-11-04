@@ -1,5 +1,5 @@
 /**
- * Runs the three MediaPipe Tasks Vision models on one frame. Used both inside the module worker
+ * Runs the MediaPipe Tasks Vision models (face, pose, object; v1.3 + optional Face Landmarker) on one frame. Used both inside the module worker
  * and on the main thread (fallback). The `tasks` module is injected so the main thread can import
  * `@mediapipe/tasks-vision` lazily (it must never be evaluated during SSR).
  *
@@ -18,9 +18,10 @@ import type { FrameObservation } from '@/features/monitoring/contracts';
 import type * as TasksVision from '@mediapipe/tasks-vision';
 import { MODEL_FILES, PERSON_CATEGORY, PHONE_CATEGORY, type VisionSettings } from './config';
 import { FrameQualitySampler } from './frameQuality';
-import { toFrameObservation, type RawVisionResults } from './observation';
+import { bestFaceScore, toFrameObservation, type RawVisionResults } from './observation';
 
-type TasksModule = Pick<typeof TasksVision, 'FilesetResolver' | 'FaceDetector' | 'PoseLandmarker' | 'ObjectDetector'>;
+type TasksModule = Pick<typeof TasksVision, 'FilesetResolver' | 'FaceDetector' | 'PoseLandmarker' | 'ObjectDetector'> &
+  Partial<Pick<typeof TasksVision, 'FaceLandmarker'>>;
 type Source = TexImageSource & CanvasImageSource;
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -30,6 +31,8 @@ export class MediaPipeRunner {
   private face: TasksVision.FaceDetector | null = null;
   private pose: TasksVision.PoseLandmarker | null = null;
   private object: TasksVision.ObjectDetector | null = null;
+  /** v1.3, optional: drowsiness is simply not measured when it is missing or failed to load. */
+  private faceLm: TasksVision.FaceLandmarker | null = null;
   private readonly sampler = new FrameQualitySampler();
   private lastTs = 0;
   private baseAt: number | null = null;
@@ -62,6 +65,19 @@ export class MediaPipeRunner {
         scoreThreshold: settings.objectScoreThreshold,
         maxResults: 10,
       });
+      if (tasks.FaceLandmarker) {
+        try {
+          runner.faceLm = await tasks.FaceLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: model(MODEL_FILES.faceLandmarker), delegate: 'CPU' },
+            runningMode: 'VIDEO',
+            numFaces: 1,
+            outputFaceBlendshapes: true,
+            outputFacialTransformationMatrixes: false,
+          });
+        } catch (e) {
+          console.warn('[vision] face landmarker unavailable, drowsiness not measured:', errMsg(e));
+        }
+      }
     } catch (e) {
       runner.close();
       throw e;
@@ -103,6 +119,13 @@ export class MediaPipeRunner {
       } catch (e) {
         errors.push(`face: ${errMsg(e)}`);
       }
+      if (this.faceLm && bestFaceScore(raw.faceDetections) >= this.settings.eyesMinFaceScore) {
+        try {
+          raw.faceBlendshapes = this.faceLm.detectForVideo(source, ts).faceBlendshapes[0]?.categories ?? null;
+        } catch (e) {
+          errors.push(`eyes: ${errMsg(e)}`);
+        }
+      }
       try {
         const res = this.pose?.detectForVideo(source, ts);
         raw.poseLandmarks = res ? (res.landmarks[0] ?? []) : null;
@@ -126,14 +149,14 @@ export class MediaPipeRunner {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    for (const t of [this.face, this.pose, this.object]) {
+    for (const t of [this.face, this.pose, this.object, this.faceLm]) {
       try {
         t?.close();
       } catch {
         /* already closed */
       }
     }
-    this.face = this.pose = this.object = null;
+    this.face = this.pose = this.object = this.faceLm = null;
     this.sampler.dispose();
   }
 }

@@ -48,6 +48,8 @@ export interface FaceLmOut {
   found: boolean;
   eyeBlinkLeft: number;
   eyeBlinkRight: number;
+  eyeLookDownLeft: number;
+  eyeLookDownRight: number;
   /** atan2(m6, m10) of the facial transformation matrix, degrees (sign convention not verified). */
   pitchDeg: number | null;
   ms: number;
@@ -234,6 +236,8 @@ function runFaceLm(f: FaceLandmarker, img: Canvas): FaceLmOut {
     found: r.faceLandmarks.length > 0,
     eyeBlinkLeft: +get('eyeBlinkLeft').toFixed(3),
     eyeBlinkRight: +get('eyeBlinkRight').toFixed(3),
+    eyeLookDownLeft: +get('eyeLookDownLeft').toFixed(3),
+    eyeLookDownRight: +get('eyeLookDownRight').toFixed(3),
     pitchDeg: m && m.length >= 11 ? +((Math.atan2(m[6]!, m[10]!) * 180) / Math.PI).toFixed(1) : null,
     ms,
   };

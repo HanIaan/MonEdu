@@ -268,6 +268,80 @@ instead of 4) — for a phone that is detected intermittently, recall drops (A6 
 2–4 s phone intervals; the median stays 20 s). Person evidence is held 5 s ≥ the 4 s maximum phone
 interval, so presence is unaffected.
 
+## E. v1.3 engine: fast seating, repeated-detection phone rule, eyes-closed drowsiness (2026-11-04)
+
+Approved by the project owner: contract value changes, the Face Landmarker model, reason
+`DROWSINESS_SUSPECTED`. Same machine/browser as above. Behaviour numbers come from `compare.mjs`
+(real state machine fed with the scores measured by `run.mjs`), run once on the unchanged v1.2 engine
+(`--label v1.2-baseline`) and once on v1.3; outputs in `.cache/results/compare-*.md`. New in the
+harness: correlated ("sticky 0.8") phone draws — a phone missed in one frame tends to stay missed —
+and a Face Landmarker pass over the COCO people subsets (`run.mjs --set coco-facelm` → `raw-facelm.json`).
+
+**Seating** (still scene from UNKNOWN, 640×480, 500/1000 ms cadence):
+
+| Subset | n | v1.2 reached / median | v1.3 reached / median |
+|---|---|---|---|
+| person_upper | 100 | 0.99 / 15.0 s | 0.99 / **3.0 s** |
+| face_hidden (head turned/bowed) | 43 | 0.93 / 15.0 s | 0.93 / **3.0 s** |
+| phone_neg (people) | 150 | 0.89 / 15.0 s | 0.89 / **3.0 s** |
+| Commons people | 23 | 0.91 / 15.0 s | 0.91 / **3.0 s** |
+| pets / empty / Commons no person (must never seat) | 100 / 60 / 4 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+The presence rule is unchanged, so who gets seated is unchanged; only the wait drops (`seatedConfirmMs`
+15 → 3 s, = the 3 s hysteresis, so a single good frame still cannot seat anyone). Trade-off: someone
+walking through the frame for > 3 s while the student is AWAY now counts as seated (until 30 s ABSENT).
+
+**Phone** (seated student, phone for 60 s; 90 phone images × 5 seeds; false suspicion = 150 phone-free
+images × 5 seeds × 300 s):
+
+| 640×480 Lite0 | per-tick det. rate | suspected ≤ 60 s | latency median / p95 | false suspicion |
+|---|---|---|---|---|
+| v1.2 (continuous run, 0.5), independent draws | 0.34 | 0.34 | 20.0 / 43.0 s | 1/750 |
+| v1.2, sticky draws | 0.34 | 0.34 | 20.0 / 53.0 s | 3/750 |
+| v1.3 rule only (threshold 0.5), independent | 0.34 | 0.39 | 20.0 / 41.0 s | 3/750 |
+| v1.3 rule only (threshold 0.5), sticky | 0.34 | 0.37 | 20.0 / 53.0 s | 4/750 |
+| **v1.3 (repeated rule + 0.4)**, independent | 0.46 | **0.49** | 20.0 / 31.0 s | 5/750 |
+| **v1.3**, sticky | 0.46 | **0.47** | 20.0 / 51.0 s | 5/750 |
+
+(320×240: 0.32 → 0.43 independent, 0.32 → 0.42 sticky.) Every v1.3 false suspicion comes from one
+image, `000000383838.jpg`: a woman looking at a white Wii remote held like a phone (a COCO hard
+negative; v1.2 also flagged it in 1–3 runs). Per-image precision at 0.4 stays 1.00 on the 150 COCO
+negatives (§A threshold sensitivity). The 20 s minimum is unchanged (E2E `camera-person.phone.spec`
+asserts ≥ 19 s). What the rule fixes: the old run had to see the phone in *consecutive* ticks for 3 s
+to even start, so a phone detected in 2 of 3 frames never triggered (unit test now covers it).
+
+**Drowsiness.** Face Landmarker (float16, 3.76 MB) found a face in 41/100 person_upper, 0/43
+face_hidden, 44/90 phone_pos, 45/150 phone_neg images; ≈ 10 ms per call (p95 11.5 ms). `min(eyeBlinkL,
+eyeBlinkR)` on gated faces (BlazeFace ≥ 0.6, n = 126): median 0.08, p95 0.36–0.52; ≥ 0.6 in **2/126**:
+`000000506178.jpg` (eyes genuinely closed, motion-blurred) and `000000218439.jpg` (looking down at a
+phone while brushing teeth, 0.62). Commons eyes-closed portraits: 0.68 / 0.67 (0.63 after the 4:3
+camera crop in the e2e harness); phone-in-hand looking down 0.51; head-on-desk painting 0.38; no face
+found on the 2 head-on-desk photos. Threshold 0.6 was chosen because 0.65 missed the cropped e2e
+frame. As a still scene held for 120 s: Commons eyes-closed 2/2 → DROWSINESS at 15 s; COCO people
+2/130 (the two images above); all Commons reading/writing/phone/head-down 0/7.
+
+Blinks are not sleep: the eyes run uses a 1 s debounce (unit test: 1 s closed every 3 s for 10 min →
+no transition) and needs 15 s. **Not detectable:** head on desk / face turned away (no landmarker face
+→ not measured, by design), eyes closed with the face below 0.6. **Not validated:** real drowsy video;
+the positive set is 2 photos. Treat as a suspicion signal, like the phone.
+
+**End-to-end** (real `MonitoringController` + models incl. Face Landmarker, main thread, 640×480,
+`run-e2e.mjs`):
+
+| Scene (start → event) | CPU | SEATED emitted | cue → DISTRACTION emitted | cue gone → FOCUS_RESUMED emitted | left → AWAY emitted | avg / p95 inference |
+|---|---|---|---|---|---|---|
+| reading → phone (commons_08) at 20 s → reading at 60 s → empty desk at 100 s | 1× | **3.8 s** (v1.2: 15.7 s) | PHONE +21.0 s | +16.3 s | +31.3 s | 50.8 / 89.0 ms |
+| same | 4× throttle | 4.4 s (v1.2: 16.4 s) | PHONE +22.6 s | +16.9 s | +34.7 s | 164.3 / 291.3 ms (cadence 1000 ms) |
+| reading → eyes closed (commons_24) at 10 s → reading at 40 s | 1× | 3.8 s | DROWSINESS +18.2 s (onset 12.8 s) | +14.9 s after the last closed-eye sample (39.5 s) | – | 67.6 / 97.8 ms |
+
+Average inference rises from ~40 ms (§D, 1×) to 51–68 ms per tick with the Face Landmarker running on
+every confident-face tick; at 4× throttle the adaptive cadence settles at 1000/2000 ms and all
+transitions still fire. No `framesSkipped`, no stalls.
+
+Bug found by this run and fixed before the numbers above: when closed-eye evidence went stale (face no
+longer measurable) FOCUS_RESUMED fired after ~5 s and was back-dated to the drowsiness onset; it now
+waits `focusResumeMs` from the last closed-eye sample (unit test added).
+
 ## Hand-off for C0's E2E (phone fixture)
 
 `Texting on cell phone.jpg` — <https://commons.wikimedia.org/wiki/File:Texting_on_cell_phone.jpg>,
@@ -291,5 +365,7 @@ node run.mjs                        # COCO set, ~23 min here → .cache/results/
 node run.mjs --set commons          # Commons set + Face Landmarker → raw-commons.json
 node run-mem.mjs                    # memory / per-model latency → mem.json
 node analyze.mjs                    # tables.md + summary.json (real state machine + classifyFrame)
+node run.mjs --set coco-facelm         # v1.3: Face Landmarker on COCO people → raw-facelm.json
+node compare.mjs --label v1.3          # v1.3 behaviour metrics (§E); run on the old engine for a baseline
 node run-e2e.mjs --scenes "/commons/commons_15.jpg@0,/commons/commons_08.jpg@20000" --duration 60000 --camera 640x480 [--cpu-throttle 4]
 ```

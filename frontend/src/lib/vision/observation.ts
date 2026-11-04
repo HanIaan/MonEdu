@@ -24,6 +24,8 @@ export interface RawVisionResults {
   faceDetections: DetectionLike[] | null;
   /** First pose's landmarks, [] when no pose, null when not run / failed. */
   poseLandmarks: LandmarkLike[] | null;
+  /** v1.3: Face Landmarker blendshapes of the first face; null when it did not run or found no face. */
+  faceBlendshapes?: CategoryLike[] | null;
   /** null when the object detector did not run this tick. */
   objectDetections: DetectionLike[] | null;
   phoneEvaluated: boolean;
@@ -55,6 +57,16 @@ export function bestCategoryScore(detections: DetectionLike[] | null, category: 
   return clamp01(best);
 }
 
+/** v1.3: both eyes closed = min(eyeBlinkLeft, eyeBlinkRight); undefined without blendshapes. */
+export function eyesClosedScore(blendshapes: CategoryLike[] | null | undefined): number | undefined {
+  if (!blendshapes || blendshapes.length === 0) return undefined;
+  const get = (n: string) => blendshapes.find((c) => c.categoryName === n)?.score;
+  const l = get('eyeBlinkLeft');
+  const r = get('eyeBlinkRight');
+  if (l === undefined || r === undefined) return undefined;
+  return clamp01(Math.min(l, r));
+}
+
 export const bestPhoneScore = (detections: DetectionLike[] | null): number => bestCategoryScore(detections, PHONE_CATEGORY);
 export const bestPersonScore = (detections: DetectionLike[] | null): number => bestCategoryScore(detections, PERSON_CATEGORY);
 
@@ -83,6 +95,8 @@ export function toFrameObservation(
     obs.personScore = personScore;
     obs.personDetected = personScore >= thresholds.personMinScore;
   }
+  const eyes = eyesClosedScore(raw.faceBlendshapes);
+  if (eyes !== undefined) obs.eyesClosedScore = eyes;
   if (raw.errors.length > 0) obs.error = raw.errors.join('; ').slice(0, 300);
   return obs;
 }

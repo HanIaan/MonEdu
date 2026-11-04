@@ -53,7 +53,7 @@ describe('toFrameObservation', () => {
       raw({
         faceDetections: [{ categories: [{ score: 0.7 }] }, { categories: [{ score: 0.93 }] }],
         poseLandmarks: lm(0.8, 0.6),
-        objectDetections: [{ categories: [{ score: 0.4, categoryName: 'cell phone' }] }, { categories: [{ score: 0.9, categoryName: 'cup' }] }],
+        objectDetections: [{ categories: [{ score: 0.35, categoryName: 'cell phone' }] }, { categories: [{ score: 0.9, categoryName: 'cup' }] }],
         phoneEvaluated: true,
       }),
       settings,
@@ -67,11 +67,24 @@ describe('toFrameObservation', () => {
       poseScore: 0.6,
       phoneEvaluated: true,
       phoneDetected: false,
-      phoneScore: 0.4,
+      phoneScore: 0.35,
       inferenceMs: 12,
       personDetected: false, // v1.2: object detector ran, no person category in its output
       personScore: 0,
     } satisfies FrameObservation);
+  });
+
+  it('v1.3 eyes: eyesClosedScore = min(eyeBlinkLeft, eyeBlinkRight), absent without blendshapes', () => {
+    const bs = (l: number, r: number) => [
+      { score: l, categoryName: 'eyeBlinkLeft' },
+      { score: 0.9, categoryName: 'jawOpen' },
+      { score: r, categoryName: 'eyeBlinkRight' },
+    ];
+    expect(toFrameObservation(raw({ faceBlendshapes: bs(0.8, 0.7) }), settings).eyesClosedScore).toBe(0.7);
+    expect(toFrameObservation(raw({ faceBlendshapes: bs(0.9, 0.1) }), settings).eyesClosedScore).toBe(0.1); // one-eye wink
+    expect(toFrameObservation(raw({ faceBlendshapes: null }), settings)).not.toHaveProperty('eyesClosedScore');
+    expect(toFrameObservation(raw({}), settings)).not.toHaveProperty('eyesClosedScore');
+    expect(toFrameObservation(raw({ faceBlendshapes: [{ score: 0.9, categoryName: 'eyeBlinkLeft' }] }), settings)).not.toHaveProperty('eyesClosedScore');
   });
 
   it('upperBodyDetected needs BOTH shoulders visible', () => {

@@ -10,6 +10,7 @@ Nothing is fetched from a CDN at runtime. All inference runs in the browser; onl
 | `blaze_face_short_range.tflite` | 229 746 | `b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f` |
 | `pose_landmarker_lite.task` | 5 777 746 | `59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a` |
 | `efficientdet_lite0.tflite` | 4 602 795 | `0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb` |
+| `face_landmarker.task` (v1.3) | 3 758 596 | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
 
 Verify: `cd frontend/public/models && shasum -a 256 *.tflite *.task`
 
@@ -60,6 +61,24 @@ Verify: `cd frontend/public/models && shasum -a 256 *.tflite *.task`
   engine only reports `DISTRACTION_SUSPECTED` after 20 s of continuous evidence with hysteresis, and
   the UI must present it as a *suspicion*.
 
+## 4. Face Landmarker (float16) — v1.3, eye closure only
+
+- Source: <https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task>
+  (copied 2026-11-04 from the Phase 2 bench cache, where it had been downloaded for §C; sha256 above
+  matches the hash recorded then; a zip of face detector + landmarks + blendshapes models)
+- Docs: <https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker>
+- License: **not re-verified** for this file (MediaPipe models are published under Apache-2.0 per the
+  MediaPipe solutions docs; check the model card before a public release).
+- Used for: `eyesClosedScore = min(eyeBlinkLeft, eyeBlinkRight)` blendshapes → drowsiness
+  (`DROWSINESS_SUSPECTED` after 15 s of closed eyes). Runs only on ticks whose BlazeFace score ≥
+  `presenceMinScore` (0.6), `numFaces: 1`, no transformation matrices. Landmarks and blendshapes other
+  than the two eye scores are dropped in `observation.ts`. Optional: if it fails to load, monitoring
+  continues without drowsiness.
+- Cannot: faces turned away / bowed over the desk (not found → not measured, so head-on-desk sleeping
+  is **not** detected); downward gaze raises eyeBlink (a person looking down at a phone scored 0.62),
+  so a long look down at a phone can be reported as drowsiness. Cost here ≈ 10 ms per call
+  (main thread, Apple Silicon). See `bench/vision/RESULTS.md` §E.
+
 ## Phase 2 comparison (P2-W1, 2026-11-03)
 
 Full method, test-set limits and every table: [`../../bench/vision/RESULTS.md`](../../bench/vision/RESULTS.md).
@@ -70,7 +89,7 @@ Candidate object detectors were downloaded only into `bench/vision/.cache/` (not
 | EfficientDet-Lite0 float16 | `object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite` | 7 254 339 | `4b59100025bea1235a84c1038879a6cccc9f6c49f5e41144e91e74d99e780993` |
 | EfficientDet-Lite2 int8 | `object_detector/efficientdet_lite2/int8/1/efficientdet_lite2.tflite` | 7 515 971 | `b3f50554cb0ea559e90328845f7d9ba4d13c8bff372914d24e06bc8bb72fa896` |
 | SSD-MobileNetV2 float32 | `object_detector/ssd_mobilenet_v2/float32/1/ssd_mobilenet_v2.tflite` | 11 316 189 | `b8ccb1a25d45455ba52e85f26531948e1cb75efeb94c7c3d456d54fd4d6fbdd2` |
-| Face Landmarker (research, §C) | `face_landmarker/face_landmarker/float16/1/face_landmarker.task` | 3 758 596 | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
+| Face Landmarker (research §C; shipped in v1.3, see §4) | `face_landmarker/face_landmarker/float16/1/face_landmarker.task` | 3 758 596 | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
 
 (`efficientdet_lite1` and `ssd_mobilenet_v2` int8 are not published there: HTTP 404.)
 License: not re-verified for these files (EfficientDet: same situation as Lite0 above; Face Landmarker

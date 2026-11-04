@@ -257,7 +257,7 @@ describe('MonitoringController', () => {
     ctrl.dispose();
   });
 
-  it('pause → MONITORING_PAUSED, camera + pipeline + timers released; resume requires fresh 15 s', async () => {
+  it('pause → MONITORING_PAUSED, camera + pipeline + timers released; resume requires fresh 3 s', async () => {
     const { ctrl, videoEl, track, pipeline, transitions, doc, perm } = setup();
     await ctrl.start(videoEl);
     await vi.advanceTimersByTimeAsync(16_000);
@@ -273,7 +273,7 @@ describe('MonitoringController', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     await ctrl.start(videoEl);
     const resumedAt = Date.now();
-    await vi.advanceTimersByTimeAsync(14_000);
+    await vi.advanceTimersByTimeAsync(2_000);
     expect(transitions.at(-1)!.reason).toBe('MONITORING_PAUSED');
     await vi.advanceTimersByTimeAsync(2_000);
     expect(transitions.at(-1)).toMatchObject({ reason: 'SEATED_CONFIRMED' });
@@ -387,7 +387,7 @@ describe('MonitoringController', () => {
       pipeline.delayMs = 400; // 80 % of the 500 ms interval
       await ctrl.start(videoEl);
       await vi.advanceTimersByTimeAsync(16_500);
-      // Seating is elapsed-time based: confirmed after 15 s of evidence, back-dated to the first frame.
+      // Seating is elapsed-time based: confirmed after 3 s of evidence, back-dated to the first frame.
       expect(transitions[0]).toMatchObject({ reason: 'SEATED_CONFIRMED', detectedAt: T0 });
       await vi.advanceTimersByTimeAsync(40_000);
       let perf = ctrl.getSnapshot().perf;
@@ -487,7 +487,7 @@ describe('MonitoringController', () => {
   });
 
   describe('frame freshness (hidden 2x2 analysis video may stop delivering frames)', () => {
-    it('frozen currentTime → no new observations → UNKNOWN (INFERENCE_STALLED) after staleFrameMs; resumed frames re-confirm 15 s', async () => {
+    it('frozen currentTime → no new observations → UNKNOWN (INFERENCE_STALLED) after staleFrameMs; resumed frames re-confirm 3 s', async () => {
       const { ctrl, videoEl, video, pipeline, transitions } = setup();
       await ctrl.start(videoEl);
       await vi.advanceTimersByTimeAsync(16_000);
@@ -508,7 +508,7 @@ describe('MonitoringController', () => {
 
       video.frozen = false; // frames flow again
       const resumedAt = Date.now();
-      await vi.advanceTimersByTimeAsync(14_000);
+      await vi.advanceTimersByTimeAsync(2_000);
       expect(transitions.at(-1)).toBe(stall);
       await vi.advanceTimersByTimeAsync(2_000);
       expect(transitions.at(-1)).toMatchObject({ state: 'FOCUS_ESTIMATED', reason: 'SEATED_CONFIRMED' });

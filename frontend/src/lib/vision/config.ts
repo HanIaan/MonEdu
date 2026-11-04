@@ -12,6 +12,8 @@ export const MODEL_FILES = {
   face: 'blaze_face_short_range.tflite',
   pose: 'pose_landmarker_lite.task',
   object: 'efficientdet_lite0.tflite',
+  /** v1.3: eye-closure blendshapes for drowsiness (bench/vision/RESULTS.md §E). */
+  faceLandmarker: 'face_landmarker.task',
 } as const;
 
 /** COCO label used by EfficientDet-Lite0 for phones. */
@@ -39,6 +41,11 @@ export interface VisionSettings {
   /** Score needed for `personDetected` (W1-internal tunable, see bench/vision/RESULTS.md §B). */
   personMinScore: number;
   /**
+   * v1.3: Face Landmarker (eyes closed) only runs on ticks whose face score reaches this. A face turned
+   * down over a notebook scores lower and is skipped, so downward gaze is not read as closed eyes.
+   */
+  eyesMinFaceScore: number;
+  /**
    * Detector-internal score floors. Deliberately below the engine thresholds so grey-zone
    * scores are reported (the engine, not the detector, decides PRESENT/ABSENT/UNCERTAIN).
    */
@@ -47,7 +54,7 @@ export interface VisionSettings {
 }
 
 export function visionSettingsFromConfig(
-  config: Pick<EngineConfig, 'poseMinVisibility' | 'phoneMinScore'> = DEFAULT_ENGINE_CONFIG,
+  config: Pick<EngineConfig, 'poseMinVisibility' | 'phoneMinScore' | 'presenceMinScore'> = DEFAULT_ENGINE_CONFIG,
   origin?: string,
 ): VisionSettings {
   const base = origin ?? (typeof location !== 'undefined' ? location.origin : '');
@@ -57,6 +64,7 @@ export function visionSettingsFromConfig(
     poseMinVisibility: config.poseMinVisibility,
     phoneMinScore: config.phoneMinScore,
     personMinScore: PERSON_MIN_SCORE,
+    eyesMinFaceScore: config.presenceMinScore,
     faceMinDetectionConfidence: 0.2,
     objectScoreThreshold: 0.2,
   };

@@ -307,7 +307,7 @@ export class AutoVisionPipeline implements VisionPipeline {
 }
 
 export function createVisionPipeline(
-  config?: Pick<EngineConfig, 'poseMinVisibility' | 'phoneMinScore'>,
+  config?: Pick<EngineConfig, 'poseMinVisibility' | 'phoneMinScore' | 'presenceMinScore'>,
   opts?: AutoPipelineOptions,
 ): VisionPipeline {
   return new AutoVisionPipeline(visionSettingsFromConfig(config), opts);

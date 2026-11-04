@@ -6,6 +6,9 @@
  * Semantics: docs/contracts/state-machine.md. Do not edit — file a CONTRACT_CHANGE_REQUEST.
  * v1.2 (Phase 2): optional FrameObservation.person*, MonitoringPerf adaptive-cadence fields. All optional:
  * producers (W1) SHOULD populate them, consumers (W3) MUST handle `undefined`.
+ * v1.3: seatedConfirmMs 15 s → 3 s, phoneMinScore 0.5 → 0.4, phone rule = repeated detection (not continuous),
+ * eyes-closed drowsiness (FrameObservation.eyesClosedScore?, EngineConfig.drowsyMs/eyesClosedMinScore,
+ * reason DROWSINESS_SUSPECTED). See docs/contracts/state-machine.md.
  */
 import type { components } from '@/lib/api/schema';
 
@@ -29,6 +32,7 @@ export type ClientTransitionReason = Extract<
   | 'FOCUS_RESUMED'
   | 'PRESENCE_LOST'
   | 'PHONE_SUSPECTED'
+  | 'DROWSINESS_SUSPECTED'
   | 'LOW_CONFIDENCE'
   | 'CAMERA_STOPPED'
   | 'CAMERA_PERMISSION_DENIED'
@@ -47,9 +51,11 @@ export interface EngineConfig {
   seatedConfirmMs: number;
   /** ABSENT run needed for → AWAY. */
   awayMs: number;
-  /** Phone run (while present) needed for FOCUS → DISTRACTION_SUSPECTED. */
+  /** Phone seen repeatedly (while present) for this long → DISTRACTION_SUSPECTED (PHONE_SUSPECTED). */
   phoneSuspectMs: number;
-  /** No-phone present run needed for DISTRACTION_SUSPECTED → FOCUS_ESTIMATED. */
+  /** v1.3: eyes-closed run (while present) needed for FOCUS → DISTRACTION_SUSPECTED (DROWSINESS_SUSPECTED). */
+  drowsyMs: number;
+  /** Present with no phone and eyes not closed for this long: DISTRACTION_SUSPECTED → FOCUS_ESTIMATED. */
   focusResumeMs: number;
   /** UNCERTAIN run needed for → UNKNOWN (LOW_CONFIDENCE). */
   uncertainMs: number;
@@ -61,6 +67,8 @@ export interface EngineConfig {
   absentMaxScore: number;
   poseMinVisibility: number;
   phoneMinScore: number;
+  /** v1.3: `eyesClosedScore` at or above this counts as "eyes closed". */
+  eyesClosedMinScore: number;
   /** Face + pose inference cadence. */
   inferenceIntervalMs: number;
   /** Object (phone) detector cadence. */
@@ -70,9 +78,10 @@ export interface EngineConfig {
 }
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
-  seatedConfirmMs: 15_000,
+  seatedConfirmMs: 3_000,
   awayMs: 30_000,
   phoneSuspectMs: 20_000,
+  drowsyMs: 15_000,
   focusResumeMs: 15_000,
   uncertainMs: 10_000,
   debounceMs: 3_000,
@@ -80,7 +89,8 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   presenceMinScore: 0.6,
   absentMaxScore: 0.3,
   poseMinVisibility: 0.5,
-  phoneMinScore: 0.5,
+  phoneMinScore: 0.4,
+  eyesClosedMinScore: 0.6,
   inferenceIntervalMs: 500,
   phoneIntervalMs: 1_000,
   camera: { width: 640, height: 480, frameRate: 15 },
@@ -117,6 +127,11 @@ export interface FrameObservation {
   personDetected?: boolean;
   /** v1.2 (optional): best COCO "person" score, 0..1. */
   personScore?: number;
+  /**
+   * v1.3 (optional): min(eyeBlinkLeft, eyeBlinkRight) from Face Landmarker blendshapes, 0..1 (1 = both
+   * eyes closed). Undefined when the landmarker did not run this tick or found no face.
+   */
+  eyesClosedScore?: number;
 }
 
 export type InferenceBackend = 'WORKER' | 'MAIN_THREAD';

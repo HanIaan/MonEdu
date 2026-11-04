@@ -17,7 +17,7 @@ export interface E2ERequest {
 export interface E2EResult {
   startedAt: number;
   transitions: (EngineTransition & { emittedAt: number })[];
-  snapshots: { t: number; state: string; face: number; pose: number; phone: number; person: number | null; perf: MonitoringSnapshot['perf'] }[];
+  snapshots: { t: number; state: string; face: number; pose: number; phone: number; eyes: number | null; person: number | null; perf: MonitoringSnapshot['perf'] }[];
   camera: { width: number; height: number };
 }
 
@@ -82,6 +82,7 @@ window.runE2E = async (req) => {
       face: o?.faceScore ?? 0,
       pose: o?.poseScore ?? 0,
       phone: o?.phoneScore ?? 0,
+      eyes: o?.eyesClosedScore ?? null,
       person: o?.personScore ?? null,
       perf: s.perf,
     });

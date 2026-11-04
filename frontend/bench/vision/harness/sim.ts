@@ -18,6 +18,11 @@ export interface SeqOptions {
   config?: Partial<EngineConfig>;
   /** Optional k-of-n pre-filter on per-evaluation decisions (applied before the state machine). */
   kOfN?: { k: number; n: number };
+  /**
+   * Probability that a phone evaluation repeats the previous draw instead of drawing a new one.
+   * 0 = independent draws (optimistic); 0.8 ≈ real frames, where a hidden / badly lit phone stays so for a while.
+   */
+  stickiness?: number;
 }
 
 function rng(seed: number) {
@@ -61,11 +66,14 @@ export function phoneLatency(o: SeqOptions): number | null {
   if (sm.state !== 'FOCUS_ESTIMATED') throw new Error(`setup failed: ${sm.state}`);
   let lastPhone = Number.NEGATIVE_INFINITY;
   const recent: boolean[] = [];
+  let prev: number | null = null;
   for (let t = t0; t <= t0 + o.durationMs; t += o.intervalMs) {
     const obs = base(t);
     if (t - lastPhone >= o.phoneIntervalMs) {
       lastPhone = t;
-      let s = o.phoneScores[Math.floor(rand() * o.phoneScores.length)] ?? 0;
+      const stick = prev !== null && rand() < (o.stickiness ?? 0);
+      let s: number = stick && prev !== null ? prev : (o.phoneScores[Math.floor(rand() * o.phoneScores.length)] ?? 0);
+      prev = s;
       if (o.kOfN) {
         recent.push(s >= cfg.phoneMinScore);
         if (recent.length > o.kOfN.n) recent.shift();
@@ -80,6 +88,59 @@ export function phoneLatency(o: SeqOptions): number | null {
   }
   return null;
 }
+
+/** Measured per-image scores of one (still) scene, as the production reducers report them. */
+export interface SceneScores {
+  face: number;
+  shoulders: number;
+  person: number;
+  phone?: number;
+  /** min(eyeBlinkLeft, eyeBlinkRight) when Face Landmarker found a face; undefined otherwise. */
+  eyesClosed?: number;
+}
+
+function sceneObs(at: number, s: SceneScores, detector: boolean, cfg: EngineConfig): FrameObservation {
+  const o: FrameObservation = {
+    at,
+    frameQuality: 'OK',
+    faceDetected: s.face > 0,
+    faceScore: s.face,
+    upperBodyDetected: s.shoulders >= cfg.poseMinVisibility,
+    poseScore: s.shoulders,
+    phoneEvaluated: detector,
+    phoneDetected: detector && (s.phone ?? 0) >= cfg.phoneMinScore,
+    phoneScore: detector ? (s.phone ?? 0) : 0,
+    inferenceMs: 10,
+  };
+  if (detector) {
+    o.personScore = s.person;
+    o.personDetected = s.person >= 0.5;
+  }
+  if (s.eyesClosed !== undefined) o.eyesClosedScore = s.eyesClosed;
+  return o;
+}
+
+/**
+ * Monitoring starts (UNKNOWN) on a still scene. Returns ms from the first frame to the first transition
+ * into `target` (default FOCUS_ESTIMATED), or null within durationMs. The object detector runs on the
+ * first frame and then every phoneIntervalMs, like the controller.
+ */
+export function timeToState(o: { scene: SceneScores; intervalMs: number; phoneIntervalMs: number; durationMs: number; config?: Partial<EngineConfig>; from?: 'UNKNOWN' | 'FOCUS_ESTIMATED'; target?: string }): number | null {
+  const cfg = { ...DEFAULT_ENGINE_CONFIG, ...o.config };
+  const t0 = 1_000_000;
+  const sm = createStateMachine(cfg, { state: o.from ?? 'UNKNOWN', since: t0 - 1 });
+  let lastDet = Number.NEGATIVE_INFINITY;
+  for (let t = t0; t <= t0 + o.durationMs; t += o.intervalMs) {
+    const det = t - lastDet >= o.phoneIntervalMs;
+    if (det) lastDet = t;
+    const tr = sm.observe(sceneObs(t, o.scene, det, cfg));
+    if (tr && tr.state === (o.target ?? 'FOCUS_ESTIMATED')) return t - t0;
+  }
+  return null;
+}
+
+/** compare.mjs: whether this engine version understands `eyesClosedScore` (v1.3+). */
+export const supportsEyes = () => 'eyesClosedMinScore' in DEFAULT_ENGINE_CONFIG;
 
 export { classifyFrame } from '@/features/monitoring/engine/stateMachine';
 export { toFrameObservation } from '@/lib/vision/observation';

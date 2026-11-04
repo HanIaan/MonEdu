@@ -19,9 +19,14 @@ marked as such.
   Borderline phones scoring 0.45–0.52 per frame mostly do **not** trigger suspicion. Lite2 would raise
   recall to 0.51 at 3× detector cost (+39 MB wasm) — not shipped. Test sets are COCO/Commons stills,
   not real study-room webcam video (`frontend/bench/vision/RESULTS.md` §A, test-set limits).
-- **Sleep / eyes closed are NOT detected.** Head-on-desk sleeping and head-down writing give the same
-  signals with the current models; eyes-closed needs a new model (Face Landmarker blendshapes) plus
-  labelled temporal data. Research only (bench §C); nothing shipped.
+- **Drowsiness (v1.3) = eyes closed ≥ 15 s on a frontal face only.** Face Landmarker blendshapes
+  (`DROWSINESS_SUSPECTED`); head-on-desk sleeping and faces turned/bowed away are **not** detected
+  (not measured, so never a false alarm either). Long downward gaze at a phone can read as closed eyes
+  (scored 0.62 vs threshold 0.6). Validated on stills only (2 eyes-closed photos, 2/130 COCO people
+  flagged); no real drowsy video (bench §E).
+- **Phone (v1.3):** threshold 0.4 and "seen in ≥ 50 % of detector ticks over 20 s" instead of a
+  continuous run: simulated suspicion within 60 s 0.34 → 0.49 (640×480), false suspicion 5/750 runs,
+  all from one photo of a phone-shaped remote (bench §E). Still minimum 20 s.
 - **Presence** = person detection + (face or shoulders or strong person score), so head-down writing
   is not "away" (COCO face-hidden people 41/43 PRESENT); a student far from the camera or out of frame
   laterally may read as absent. If the object detector fails, face/shoulders alone become UNCERTAIN →

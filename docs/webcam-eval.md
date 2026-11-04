@@ -42,7 +42,7 @@ WEBCAM_EVAL=1 WEBCAM_EVAL_FAKE=1 npx playwright test --project webcam-eval
 ```
 
 ## 4. 프로토콜과 기대 결과
-기준 시간은 `docs/contracts/state-machine.md` §3에서 왔습니다(착석 확인 15초, 휴대폰 20초, 자리비움 30초, 히스테리시스 3초).
+기준 시간은 `docs/contracts/state-machine.md` §3에서 왔습니다(착석 확인 3초(v1.3, 이전 15초), 휴대폰 20초(반복 검출), 눈 감김 15초, 자리비움 30초, 히스테리시스 3초).
 
 | # | 구간 | 하는 일 | 길이 | 기대 상태 | 통과 기준 |
 |---|---|---|---|---|---|

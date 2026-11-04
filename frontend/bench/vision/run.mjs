@@ -16,26 +16,29 @@ const arg = (k, d) => {
 };
 const limit = Number(arg('--limit', 1e9));
 // --set coco (default): manifest.json, jitter on phone_pos/phone_neg. --set commons: commons-manifest.json + Face Landmarker.
+// --set coco-facelm: COCO people subsets, production detector + Face Landmarker only, 640×480, no jitter → raw-facelm.json.
 const set = arg('--set', 'coco');
+const FACELM_SUBSETS = ['person_upper', 'face_hidden', 'phone_pos', 'phone_neg'];
 const port = Number(arg('--port', 3101));
 const entries =
   set === 'commons'
     ? JSON.parse(readFileSync(join(HERE, 'commons-manifest.json'), 'utf8')).items.filter((i) => i.status === 'ok' && !i.exclude)
-    : JSON.parse(readFileSync(join(HERE, 'manifest.json'), 'utf8')).entries;
+    : JSON.parse(readFileSync(join(HERE, 'manifest.json'), 'utf8')).entries.filter((e) => set !== 'coco-facelm' || FACELM_SUBSETS.includes(e.subset));
 const prefix = set === 'commons' ? '/commons/' : '/images/';
 const files = [...new Set(entries.map((e) => e.file))].slice(0, limit);
-const jitterFiles = set === 'commons' ? [] : [...new Set(entries.filter((e) => e.subset === 'phone_pos' || e.subset === 'phone_neg').map((e) => e.file))];
+const jitterFiles = set !== 'coco' ? [] : [...new Set(entries.filter((e) => e.subset === 'phone_pos' || e.subset === 'phone_neg').map((e) => e.file))];
 
-const DETECTORS = [
+const ALL_DETECTORS = [
   { key: 'lite0_int8', file: 'efficientdet_lite0.tflite' },
   { key: 'lite0_f16', file: 'efficientdet_lite0_float16.tflite' },
   { key: 'lite2_int8', file: 'efficientdet_lite2_int8.tflite' },
   { key: 'ssd_mnv2_f32', file: 'ssd_mobilenet_v2_float32.tflite' },
 ];
+const DETECTORS = set === 'coco-facelm' ? ALL_DETECTORS.slice(0, 1) : ALL_DETECTORS;
 const RES = [
   { key: '320', w: 320, h: 240 },
   { key: '640', w: 640, h: 480 },
-];
+].filter((r) => set !== 'coco-facelm' || r.key === '640');
 const JITTER_CONFIGS = [
   { res: '320', det: 'lite0_int8', roi: false },
   { res: '640', det: 'lite0_int8', roi: false },
@@ -66,15 +69,15 @@ try {
       detectors: DETECTORS,
       resolutions: RES,
       jitterImages: files.filter((f) => jitterFiles.includes(f)).map((f) => `${prefix}${f}`),
-      faceLandmarker: set === 'commons' ? 'face_landmarker.task' : undefined,
+      faceLandmarker: set === 'coco' ? undefined : 'face_landmarker.task',
       jitter: 8,
-      jitterConfigs: JITTER_CONFIGS,
+      jitterConfigs: set === 'coco' ? JITTER_CONFIGS : [],
     },
   );
   clearInterval(timer);
   mkdirSync(join(HERE, '.cache', 'results'), { recursive: true });
   const meta = { date: new Date().toISOString(), userAgent: ua, platform: `${process.platform} ${process.arch}`, loadMs: out.loadMs, wallS: (Date.now() - t0) / 1000 };
-  writeFileSync(join(HERE, '.cache', 'results', set === 'commons' ? 'raw-commons.json' : 'raw.json'), JSON.stringify({ meta, detectors: DETECTORS, results: out.results }));
+  writeFileSync(join(HERE, '.cache', 'results', { coco: 'raw.json', commons: 'raw-commons.json', 'coco-facelm': 'raw-facelm.json' }[set]), JSON.stringify({ meta, detectors: DETECTORS, results: out.results }));
   console.log('done', meta, 'errors', out.results.filter((r) => r.error).length);
 } finally {
   await browser.close();
