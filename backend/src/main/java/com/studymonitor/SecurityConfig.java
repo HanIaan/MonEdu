@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.core.*;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.authentication.*;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.*;
 import tools.jackson.databind.ObjectMapper;
@@ -51,28 +52,42 @@ public class SecurityConfig {
         return decoder;
     }
     @Bean SecurityFilterChain security(HttpSecurity http,ObjectMapper json,
-                                      @Value("${app.cors.allowed-origins}") List<String> origins) throws Exception {
+                                      @Value("${app.cors.allowed-origins}") List<String> origins,AuthCookies cookies) throws Exception {
         CorsConfiguration cors=new CorsConfiguration();
+        if(origins.stream().anyMatch(origin -> origin.contains("*"))) throw new IllegalStateException("CORS requires explicit origins");
         cors.setAllowedOrigins(origins);
+        cors.setAllowCredentials(true);
+        cors.setExposedHeaders(List.of("Retry-After"));
         cors.setAllowedMethods(List.of("GET","POST","OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization","Content-Type","Accept"));
         UrlBasedCorsConfigurationSource source=new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/**",cors);
         JwtGrantedAuthoritiesConverter authorities=new JwtGrantedAuthoritiesConverter();
         authorities.setAuthoritiesClaimName("role"); authorities.setAuthorityPrefix("ROLE_");
         JwtAuthenticationConverter converter=new JwtAuthenticationConverter(); converter.setJwtGrantedAuthoritiesConverter(authorities);
+        var bearerTokens=new DefaultBearerTokenResolver();
         return http.csrf(c -> c.disable()).cors(c -> c.configurationSource(source))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a -> a
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC,jakarta.servlet.DispatcherType.ERROR).permitAll()
-                .requestMatchers("/api/v1/auth/login","/v3/api-docs/**","/swagger-ui/**","/swagger-ui.html","/actuator/health").permitAll()
+                .requestMatchers("/api/v1/auth/**","/v3/api-docs/**","/swagger-ui/**","/swagger-ui.html","/actuator/health").permitAll()
                 .requestMatchers("/api/v1/teacher/**").hasRole("TEACHER")
-                .requestMatchers("/api/v1/me/stream","/api/v1/me/study-days/**").hasRole("STUDENT")
+                .requestMatchers("/api/v1/me/stream","/api/v1/me/study-days/**","/api/v1/me/teachers").hasRole("STUDENT")
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e
-                .authenticationEntryPoint((req,res,ex) -> problem(res,json,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED"))
+                .authenticationEntryPoint((req,res,ex) -> {
+                    if(req.getRequestURI().equals("/api/v1/auth/refresh")) cookies.clear(res,"sm_rt",AuthCookies.AUTH_PATH);
+                    problem(res,json,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED");
+                })
                 .accessDeniedHandler((req,res,ex) -> problem(res,json,HttpStatus.FORBIDDEN,"FORBIDDEN")))
-            .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(converter))
-                .authenticationEntryPoint((req,res,ex) -> problem(res,json,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED"))
+            .oauth2ResourceServer(o -> o
+                // These operations authenticate with credentials or their own cookies. An unrelated
+                // expired access token must not prevent refresh, provider login or unconditional logout.
+                .bearerTokenResolver(req -> req.getRequestURI().startsWith("/api/v1/auth/")?null:bearerTokens.resolve(req))
+                .jwt(j -> j.jwtAuthenticationConverter(converter))
+                .authenticationEntryPoint((req,res,ex) -> {
+                    if(req.getRequestURI().equals("/api/v1/auth/refresh")) cookies.clear(res,"sm_rt",AuthCookies.AUTH_PATH);
+                    problem(res,json,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED");
+                })
                 .accessDeniedHandler((req,res,ex) -> problem(res,json,HttpStatus.FORBIDDEN,"FORBIDDEN")))
             .build();
     }

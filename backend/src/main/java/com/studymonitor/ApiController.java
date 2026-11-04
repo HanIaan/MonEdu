@@ -19,7 +19,6 @@ public class ApiController {
         this.auth=auth; this.sessions=sessions; this.reports=reports; this.streams=streams;
     }
     private UUID id(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
-    @PostMapping("/auth/login") public LoginResponse login(@Valid @RequestBody LoginRequest request) { return auth.login(request); }
     @GetMapping("/me") public User me(@AuthenticationPrincipal Jwt jwt) { return auth.me(id(jwt)); }
     @PostMapping("/study-sessions") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasRole('STUDENT')")
     public Session start(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody StartRequest request) { return sessions.start(id(jwt),request); }
