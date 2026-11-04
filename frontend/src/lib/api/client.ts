@@ -31,13 +31,16 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: ErrorCode | 'NETWORK_ERROR' | 'UNKNOWN';
   readonly problem: Problem | null;
+  /** Seconds from the `Retry-After` header (429 TOO_MANY_ATTEMPTS), when the server sent one. */
+  readonly retryAfterSec: number | null;
 
-  constructor(status: number, code: ApiError['code'], message: string, problem: Problem | null = null) {
+  constructor(status: number, code: ApiError['code'], message: string, problem: Problem | null = null, retryAfterSec: number | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.problem = problem;
+    this.retryAfterSec = retryAfterSec;
   }
 
   /** Network failure or 5xx — safe to retry. */
@@ -134,11 +137,13 @@ async function rawFetch<T>(method: 'GET' | 'POST', path: string, body: unknown, 
   } catch {
     /* non-JSON error body */
   }
+  const retryAfter = Number(res.headers.get('Retry-After'));
   throw new ApiError(
     res.status,
     problem?.code ?? 'UNKNOWN',
     problem?.detail ?? problem?.title ?? `HTTP ${res.status}`,
     problem,
+    Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
   );
 }
 
