@@ -1,0 +1,86 @@
+# MonEdu production stack on one server (Oracle Cloud Always Free).
+# Everything is served from one HTTPS origin: Caddy → /api/* backend, everything else → frontend.
+# Usage (on the server, from this folder):  cp .env.example .env  (fill it)  then  ./deploy.sh
+name: monedu
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: monedu
+      POSTGRES_USER: monedu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      TZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monedu -d monedu"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build:
+      context: ../../backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/monedu
+      DB_USERNAME: monedu
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_TTL: PT15M
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      FRONTEND_BASE_URL: https://${DOMAIN}
+      AUTH_COOKIE_SECURE: "true"
+      # Caddy sets X-Forwarded-For; per-IP throttling uses its last hop.
+      TRUSTED_PROXY: "true"
+      SEED_DEMO_DATA: "false"
+      FLYWAY_LOCATIONS: classpath:db/migration
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      KAKAO_REDIRECT_URI: https://${DOMAIN}/api/v1/auth/kakao/callback
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=60
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../infra/frontend.Dockerfile
+      args:
+        # Empty = same origin: the browser calls https://DOMAIN/api/... (no cross-site cookies).
+        NEXT_PUBLIC_API_BASE_URL: ""
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

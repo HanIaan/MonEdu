@@ -1,0 +1,17 @@
+# HTTPS certificates are issued and renewed automatically (Let's Encrypt / ZeroSSL).
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API (incl. the SSE streams: flush immediately, never buffer).
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			flush_interval -1
+		}
+	}
+
+	# Everything else is the Next.js app.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
