@@ -87,17 +87,19 @@ test('refresh rotates the cookie; a concurrent replay inside the grace is accept
   await ctx.dispose();
 });
 
-test('5 wrong passwords lock the account for a while (429 + Retry-After), even with the right password', async () => {
+test('the 5th wrong password locks the account for a while (429 + Retry-After), even with the right password', async () => {
   const ctx = await pwRequest.newContext();
   const { email } = await signup(ctx, 'STUDENT');
-  for (let i = 0; i < 5; i++) expect((await ctx.post(`${API}/api/v1/auth/login`, { data: { email, password: 'wrongPass99' } })).status()).toBe(401);
+  for (let i = 0; i < 4; i++) expect((await ctx.post(`${API}/api/v1/auth/login`, { data: { email, password: 'wrongPass99' } })).status()).toBe(401);
+  // the 5th consecutive failure answers 429 and starts the lock (auth.md §3)
+  expect((await ctx.post(`${API}/api/v1/auth/login`, { data: { email, password: 'wrongPass99' } })).status()).toBe(429);
   const locked = await ctx.post(`${API}/api/v1/auth/login`, { data: { email, password: GOOD } });
   expect(locked.status()).toBe(429);
   expect((await locked.json()).code).toBe('TOO_MANY_ATTEMPTS');
   expect(Number(locked.headers()['retry-after'])).toBeGreaterThan(0);
   // unknown emails get the same treatment (no account enumeration via the lock)
   const ghost = fresh('ghost');
-  for (let i = 0; i < 5; i++) expect((await ctx.post(`${API}/api/v1/auth/login`, { data: { email: ghost, password: 'wrongPass99' } })).status()).toBe(401);
+  for (let i = 0; i < 4; i++) expect((await ctx.post(`${API}/api/v1/auth/login`, { data: { email: ghost, password: 'wrongPass99' } })).status()).toBe(401);
   expect((await ctx.post(`${API}/api/v1/auth/login`, { data: { email: ghost, password: 'wrongPass99' } })).status()).toBe(429);
   await ctx.dispose();
 });

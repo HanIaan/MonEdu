@@ -56,7 +56,7 @@ the rules the shapes cannot express. Decisions confirmed by the user (2026-11-04
 ## 3. Throttling (in-memory, per backend instance — limitation recorded)
 | Key | Limit | Response |
 |---|---|---|
-| login failures per email (known or unknown) | 5 consecutive failures → locked 15 min; success resets | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` (seconds); while locked, even a correct password gets 429 |
+| login failures per email (known or unknown) | the 5th consecutive failure itself answers 429 and starts a 15-min lock (attempts 1–4 answer 401); success resets | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` (seconds); while locked, even a correct password gets 429 |
 | credential requests per client IP (`signup`, `login`, `kakao/start`, `kakao/callback`, `kakao/complete`) | `AUTH_IP_LIMIT_PER_MINUTE` (default 30) / minute | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
 | `refresh` per client IP (every page load calls it) | `REFRESH_IP_LIMIT_PER_MINUTE` (default 120) / minute | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
 | invite-code join attempts per student | 10 / 10 minutes | 429 `TOO_MANY_ATTEMPTS` + `Retry-After` |
