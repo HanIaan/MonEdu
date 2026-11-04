@@ -131,7 +131,7 @@ test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
 test('webcam field evaluation (seated / writing / reading / phone / away / head down)', async ({ browser, request }) => {
   const total = PROTOCOL.reduce((a, s) => a + s.sec + PREP_SEC, 0);
-  test.setTimeout((total + 600) * 1000);
+  test.setTimeout((total + 900) * 1000);
   const user = process.env.WEBCAM_EVAL_USER ?? USERS.student3;
   const { token } = await apiLogin(request, user);
   const dayTotals = async () =>
@@ -222,16 +222,19 @@ test('webcam field evaluation (seated / writing / reading / phone / away / head 
   const totals0 = await dayTotals();
   const windows: { seg: Segment; a: number; b: number }[] = [];
   for (const [i, seg] of PROTOCOL.entries()) {
-    for (let k = PREP_SEC; k > 0; k--) {
-      await say(`다음 (${i + 1}/${PROTOCOL.length}): ${seg.title} — ${k}초 후 시작`, seg.instruction, '#475569');
-      await page.waitForTimeout(1000);
+    // Deadline-based countdowns: overlay updates may be slow under load, segment lengths must not drift.
+    const prepEnd = Date.now() + PREP_SEC * 1000;
+    for (let left = PREP_SEC * 1000; left > 0; left = prepEnd - Date.now()) {
+      await say(`다음 (${i + 1}/${PROTOCOL.length}): ${seg.title} — ${Math.ceil(left / 1000)}초 후 시작`, seg.instruction, '#475569');
+      await page.waitForTimeout(Math.min(1000, Math.max(0, prepEnd - Date.now())));
     }
     await beep(seg.id === 'return' ? 2 : 1);
     if (FAKE) await page.evaluate((s) => (window as unknown as { __fakeCam: { setScene(x: string): void } }).__fakeCam.setScene(s), seg.fakeScene);
     const a = Date.now();
-    for (let left = seg.sec; left > 0; left--) {
-      await say(`${i + 1}/${PROTOCOL.length} ${seg.title} — 남은 시간 ${left}초`, seg.instruction, seg.expect === null ? '#7c3aed' : '#1d4ed8');
-      await page.waitForTimeout(1000);
+    const end = a + seg.sec * 1000;
+    for (let left = seg.sec * 1000; left > 0; left = end - Date.now()) {
+      await say(`${i + 1}/${PROTOCOL.length} ${seg.title} — 남은 시간 ${Math.ceil(left / 1000)}초`, seg.instruction, seg.expect === null ? '#7c3aed' : '#1d4ed8');
+      await page.waitForTimeout(Math.min(1000, Math.max(0, end - Date.now())));
     }
     windows.push({ seg, a, b: Date.now() });
   }
