@@ -40,7 +40,7 @@ describe('Timeline', () => {
     // header + one row per interval
     expect(rows).toHaveLength(report.intervals.length + 1);
     expect(within(table).getByText('09:00:00')).toBeInTheDocument();
-    expect(within(table).getByText('진행 중')).toBeInTheDocument();
+    expect(within(table).getByText('10:00:00 (진행 중)')).toBeInTheDocument();
   });
 
   it('shows an empty message when there are no intervals', () => {
@@ -89,5 +89,26 @@ describe('Timeline', () => {
     const report = makeReport();
     render(<Timeline intervals={report.intervals} computedAt={report.computedAt} />);
     expect(screen.queryByTestId('timeline-gap')).not.toBeInTheDocument();
+  });
+
+  it('does not paint unverified time as focus before a late timeout report arrives', () => {
+    const report = makeReport();
+    const stalled = report.intervals.map((interval) => interval.open ? { ...interval, durationSeconds: 60 } : interval);
+    const { rerender } = render(<Timeline intervals={stalled} computedAt={report.computedAt} />);
+    const focus = screen.getAllByTestId('timeline-segment').at(-1)!;
+    expect(focus.parentElement?.style.width).toBe(`${(60 / 3600) * 100}%`);
+    expect(focus).toHaveAttribute('aria-label', expect.stringContaining('09:35:00–09:36:00'));
+    expect(screen.getByTestId('timeline-pending')).toHaveAttribute('aria-label', expect.stringContaining('09:36:00–10:00:00'));
+
+    // The server later confirms UNKNOWN from the last verified instant. The previous focus
+    // segment must keep the same width: only the previously pending tail changes state.
+    const confirmed = stalled.map((interval) => interval.open
+      ? { ...interval, endedAt: '2026-11-03T00:36:00Z', open: false } : interval);
+    confirmed.push({ ...stalled.at(-1)!, id: 'timeout', state: 'UNKNOWN', reason: 'HEARTBEAT_TIMEOUT',
+      startedAt: '2026-11-03T00:36:00Z', endedAt: null, open: true, durationSeconds: 1440 });
+    rerender(<Timeline intervals={confirmed} computedAt={report.computedAt} />);
+    expect(screen.getAllByTestId('timeline-segment')[2]!.parentElement?.style.width).toBe(`${(60 / 3600) * 100}%`);
+    expect(screen.queryByTestId('timeline-pending')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('timeline-segment').at(-1)).toHaveAttribute('data-state', 'UNKNOWN');
   });
 });

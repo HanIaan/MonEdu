@@ -2,6 +2,7 @@ import type { StudyDayReport } from '@/lib/api';
 import { formatDuration, formatSeoulTime } from '@/lib/time';
 import { StateBadge } from '@/components/StateBadge';
 import { reasonText } from '@/components/Timeline';
+import { activityEndMs, awaitingActivityConfirmation } from '@/components/activityTime';
 
 /** Session boundaries and the very same activity intervals used by the day timeline. */
 export function SessionHistory({ report }: { report: StudyDayReport }) {
@@ -38,7 +39,8 @@ export function SessionHistory({ report }: { report: StudyDayReport }) {
                   className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-3 tabular-nums">{formatSeoulTime(interval.startedAt)}</td>
                   <td className="px-4 py-3 tabular-nums">
-                    {interval.endedAt ? formatSeoulTime(interval.endedAt) : '진행 중'}
+                    {formatSeoulTime(activityEndMs(interval, report.computedAt))}
+                    {interval.open ? (awaitingActivityConfirmation(interval, report.computedAt) ? ' (마지막 확인)' : ' (진행 중)') : ''}
                   </td>
                   <td className="px-4 py-3"><StateBadge state={interval.state} /></td>
                   <td className="px-4 py-3 tabular-nums">{formatDuration(interval.durationSeconds)}</td>

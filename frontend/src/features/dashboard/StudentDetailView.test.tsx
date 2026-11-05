@@ -72,4 +72,14 @@ describe('StudentDetailView', () => {
     expect(within(second).getAllByTestId('session-activity')).toHaveLength(1);
     expect(second).toHaveTextContent('11:00:00 – 11:05:00 · 종료 · 학습 종료');
   });
+
+  it('shows the last confirmed end in session history when the open interval is stale', () => {
+    const report = makeReport();
+    report.intervals[2] = { ...report.intervals[2]!, durationSeconds: 60 };
+    render(<StudentDetailView {...baseProps} report={report} />);
+    const last = screen.getAllByTestId('session-activity').at(-1)!;
+    expect(last).toHaveTextContent('09:36:00 (마지막 확인)');
+    expect(last).toHaveTextContent('1분 0초');
+    expect(screen.getByTestId('timeline-pending')).toBeInTheDocument();
+  });
 });

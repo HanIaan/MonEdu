@@ -1,6 +1,7 @@
 import type { ActivityInterval, ActivityState, LateStatus } from '@/lib/api';
 import { formatDuration, formatSeoulTime } from '@/lib/time';
 import { STATE_META } from '@/components/StateBadge';
+import { activityEndMs } from './activityTime';
 
 export interface TimelineProps {
   /** Ordered intervals (server already sorts by startedAt). */
@@ -78,7 +79,7 @@ function buildSegments(intervals: ActivityInterval[], computedAtMs: number): { s
   const parsed = intervals
     .map((interval) => {
       const startMs = Date.parse(interval.startedAt);
-      const rawEnd = interval.endedAt ? Date.parse(interval.endedAt) : computedAtMs;
+      const rawEnd = activityEndMs(interval, computedAtMs);
       const endMs = Number.isFinite(rawEnd) ? Math.max(rawEnd, startMs) : startMs;
       return { interval, startMs, endMs };
     })
@@ -88,7 +89,8 @@ function buildSegments(intervals: ActivityInterval[], computedAtMs: number): { s
   if (parsed.length === 0) return { segments: [], spanStart: 0, spanEnd: 0 };
 
   const spanStart = parsed[0]!.startMs;
-  const spanEnd = Math.max(...parsed.map((entry) => entry.endMs), spanStart);
+  const spanEnd = Math.max(...parsed.map((entry) => entry.endMs), spanStart,
+    parsed.some((entry) => !entry.interval.endedAt) && Number.isFinite(computedAtMs) ? computedAtMs : spanStart);
 
   const total = Math.max(1, spanEnd - spanStart);
   const segments = parsed.map(({ interval, startMs, endMs }) => ({
@@ -151,7 +153,7 @@ function Tooltip({ anchor, duration, dot, text }: { anchor: string; duration: st
 function tooltipFor(segment: Segment, labels?: Record<ActivityState, string>): string {
   const label = labels?.[segment.interval.state] ?? STATE_META[segment.interval.state].label;
   const start = formatSeoulTime(segment.interval.startedAt);
-  const end = segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '진행 중';
+  const end = formatSeoulTime(segment.endMs);
   const duration = formatDuration(segment.interval.durationSeconds);
   const reason = segment.interval.reason ? ` · ${reasonText(segment.interval.reason)}` : '';
   return `${label} · ${start}–${end} · ${duration}${reason}`;
@@ -165,6 +167,11 @@ export function Timeline({ intervals, computedAt, labels, fillGaps = false, clas
   const { segments, spanStart, spanEnd } = buildSegments(intervals, Date.parse(computedAt));
   const gaps = fillGaps ? findGaps(segments, spanStart, spanEnd) : [];
   const unknownLabel = labels?.UNKNOWN ?? STATE_META.UNKNOWN.label;
+  const lastEnd = Math.max(...segments.map((segment) => segment.endMs));
+  const pending = segments.length > 0 && spanEnd - lastEnd >= 1000 && segments.some((segment) => !segment.interval.endedAt)
+    ? { left: ((lastEnd - spanStart) / Math.max(1, spanEnd - spanStart)) * 100,
+        width: ((spanEnd - lastEnd) / Math.max(1, spanEnd - spanStart)) * 100 }
+    : null;
 
   if (segments.length === 0) {
     return (
@@ -192,6 +199,16 @@ export function Timeline({ intervals, computedAt, labels, fillGaps = false, clas
           where separate elements would restart the pattern); measured states sit on top of it.
         */}
         <div className={`relative h-10 w-full ${fillGaps ? STATE_META.UNKNOWN.segment : 'bg-slate-100'}`}>
+          {pending ? (
+            <div className="group absolute top-0 h-full bg-slate-100 outline-none"
+              style={{ left: `${pending.left}%`, width: `${pending.width}%` }}>
+              <div data-testid="timeline-pending" role="img" tabIndex={0} className="h-full w-full"
+                aria-label={`확인 대기 · ${formatSeoulTime(lastEnd)}–${formatSeoulTime(spanEnd)} · 아직 상태가 확인되지 않은 시간`} />
+              <Tooltip anchor={tooltipAnchor(pending.left, pending.width)}
+                duration={formatDuration((spanEnd - lastEnd) / 1000)} dot="bg-slate-300"
+                text="확인 대기 · 아직 상태가 확인되지 않은 시간" />
+            </div>
+          ) : null}
           {gaps.map((gap) => {
             const text = `${unknownLabel} (기록 없음) · ${formatSeoulTime(new Date(gap.startMs))}–${formatSeoulTime(new Date(gap.endMs))}`;
             const duration = formatDuration((gap.endMs - gap.startMs) / 1000);
@@ -245,9 +262,7 @@ export function Timeline({ intervals, computedAt, labels, fillGaps = false, clas
                   anchor={tooltipAnchor(segment.leftPct, segment.widthPct)}
                   duration={formatDuration(segment.interval.durationSeconds)}
                   dot={meta.dot}
-                  text={`${label} · ${formatSeoulTime(segment.interval.startedAt)}–${
-                    segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '지금'
-                  }`}
+                  text={`${label} · ${formatSeoulTime(segment.interval.startedAt)}–${formatSeoulTime(segment.endMs)}`}
                 />
               </div>
             );
@@ -263,6 +278,12 @@ export function Timeline({ intervals, computedAt, labels, fillGaps = false, clas
                 {labels?.[state] ?? STATE_META[state].label}
               </span>
             ))}
+            {pending ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                <span aria-hidden="true" className="h-2.5 w-2.5 bg-slate-100 ring-1 ring-slate-300" />
+                확인 대기
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -282,7 +303,7 @@ export function Timeline({ intervals, computedAt, labels, fillGaps = false, clas
             <tr key={`sr-${segment.interval.id}`}>
               <td>{labels?.[segment.interval.state] ?? STATE_META[segment.interval.state].label}</td>
               <td>{formatSeoulTime(segment.interval.startedAt)}</td>
-              <td>{segment.interval.endedAt ? formatSeoulTime(segment.interval.endedAt) : '진행 중'}</td>
+              <td>{formatSeoulTime(segment.endMs)}{segment.interval.open ? ' (진행 중)' : ''}</td>
               <td>{formatDuration(segment.interval.durationSeconds)}</td>
             </tr>
           ))}
