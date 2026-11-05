@@ -78,8 +78,19 @@ describe('StudentDetailView', () => {
     report.intervals[2] = { ...report.intervals[2]!, durationSeconds: 60 };
     render(<StudentDetailView {...baseProps} report={report} />);
     const last = screen.getAllByTestId('session-activity').at(-1)!;
-    expect(last).toHaveTextContent('09:36:00 (마지막 확인)');
+    expect(last).toHaveTextContent('09:36:00 (연결 확인 중)');
     expect(last).toHaveTextContent('1분 0초');
     expect(screen.getByTestId('timeline-pending')).toBeInTheDocument();
+  });
+
+  it('labels an automatically ended session as ended without live or last-confirmed labels', () => {
+    const report = makeReport();
+    report.sessions[0] = { ...report.sessions[0]!, status: 'ENDED', endedAt: report.computedAt, endReason: 'HEARTBEAT_TIMEOUT' };
+    report.intervals = report.intervals.map((i) => ({ ...i, open: false, endedAt: i.endedAt ?? report.computedAt }));
+    render(<StudentDetailView {...baseProps} report={report} />);
+    const history = screen.getByTestId('session-history');
+    expect(history).toHaveTextContent('종료 · 연결 끊김으로 자동 종료');
+    expect(history).not.toHaveTextContent('진행 중');
+    expect(history).not.toHaveTextContent('마지막 확인');
   });
 });

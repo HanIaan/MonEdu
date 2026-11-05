@@ -53,7 +53,13 @@ public class ReportService {
         for(ActivityInterval i:intervals) {
             StudySession s=byId.get(i.sessionId);
             Instant end=i.endedAt;
-            if(end==null) end=Duration.between(s.verifiedUntil,now).compareTo(config.liveEndGrace())<=0?now:s.verifiedUntil;
+            if(end==null) {
+                Instant confirmed=s.verifiedUntil;
+                // BREAK/UNKNOWN need no camera, but still have live session heartbeats.
+                if((i.state==State.BREAK || i.state==State.UNKNOWN) && s.lastHeartbeatAt!=null)
+                    confirmed=SessionService.max(confirmed,s.lastHeartbeatAt);
+                end=Duration.between(confirmed,now).compareTo(config.liveEndGrace())<=0?now:confirmed;
+            }
             end=SessionService.max(end,i.startedAt);
             Duration duration=Duration.between(i.startedAt,end);
             totals.put(i.state,totals.get(i.state).plus(duration));

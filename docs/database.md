@@ -70,7 +70,7 @@ PK (`teacher_id`, `student_id`); index on `student_id` (fan-out lookups).
 | study_date | date | Asia/Seoul date of `started_at` |
 | started_at | timestamptz | server time |
 | ended_at | timestamptz null | |
-| end_reason | varchar(32) null | |
+| end_reason | varchar(32) null | `SESSION_ENDED`, `SESSION_REPLACED`, or `HEARTBEAT_TIMEOUT` (5-minute idle expiry; V5) |
 | current_state | varchar(32) | ActivityState |
 | current_state_since | timestamptz | |
 | last_seq | bigint | default 0 |

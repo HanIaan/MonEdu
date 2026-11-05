@@ -121,7 +121,7 @@ class MigrationUpgradeTests {
     void existingV1AndDemoSeedUpgradeWithoutDataLoss(boolean enableSeedAtBoot) throws Exception {
         migrateLegacy(true); addStudyHistory(); var before=existingStudyData();
         boot(enableSeedAtBoot,db -> {
-            assertThat(versions()).containsExactly("1","1000","2","3","4");
+            assertThat(versions()).containsExactly("1","1000","2","3","4","5");
             assertThat(existingStudyData()).isEqualTo(before);
         });
     }
@@ -143,7 +143,7 @@ class MigrationUpgradeTests {
         }
         assertThat(versions()).containsExactly("1","1000","2"); var before=existingStudyData();
         boot(true,db -> {
-            assertThat(versions()).containsExactly("1","1000","2","3","4");
+            assertThat(versions()).containsExactly("1","1000","2","3","4","5");
             assertThat(existingStudyData()).isEqualTo(before);
         });
     }
@@ -152,7 +152,7 @@ class MigrationUpgradeTests {
         assertThat(versions()).containsExactly("1","2","1000");
         var before=existingStudyData();
         boot(true,db -> {
-            assertThat(versions()).containsExactly("1","2","1000","3","4");
+            assertThat(versions()).containsExactly("1","2","1000","3","4","5");
             assertThat(existingStudyData()).isEqualTo(before);
             assertThat(db.queryForObject("select count(*) from users where terms_agreed_at is null and privacy_agreed_at is null and agreements_version is null",Integer.class)).isEqualTo(5);
             assertThat(db.queryForObject("select is_nullable from information_schema.columns where table_name='users' and column_name='email'",String.class)).isEqualTo("YES");
@@ -161,13 +161,13 @@ class MigrationUpgradeTests {
                 assertThat(db.queryForObject("select count(*) from "+table,Integer.class)).isZero();
         });
         boot(true,db -> {
-            assertThat(versions()).containsExactly("1","2","1000","3","4");
+            assertThat(versions()).containsExactly("1","2","1000","3","4","5");
             assertThat(existingStudyData()).isEqualTo(before);
         });
     }
     @Test void freshDemoDatabaseStillMigratesAndSeedsInOrder() {
         boot(true,db -> {
-            assertThat(versions()).containsExactly("1","2","3","4","1000");
+            assertThat(versions()).containsExactly("1","2","3","4","5","1000");
             assertThat(db.queryForObject("select count(*) from users",Integer.class)).isEqualTo(5);
             assertThat(db.queryForObject("select count(*) from teacher_students",Integer.class)).isEqualTo(3);
         });
@@ -176,7 +176,7 @@ class MigrationUpgradeTests {
     void seedlessDatabaseBootsWithoutDemoAccounts(boolean existingV1) throws Exception {
         if(existingV1) migrateLegacy(false);
         boot(false,db -> {
-            assertThat(versions()).containsExactly("1","2","3","4");
+            assertThat(versions()).containsExactly("1","2","3","4","5");
             assertThat(db.queryForObject("select count(*) from users",Integer.class)).isZero();
         });
     }

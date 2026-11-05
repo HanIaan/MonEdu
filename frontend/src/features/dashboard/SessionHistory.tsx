@@ -24,14 +24,15 @@ export function SessionHistory({ report }: { report: StudyDayReport }) {
         {[...report.sessions].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)).map((session, index) => {
           const intervals = report.intervals.filter((interval) => interval.sessionId === session.id)
             .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+          const waiting = intervals.some((interval) => awaitingActivityConfirmation(interval, report.computedAt));
           return (
             <tbody key={session.id} data-session-id={session.id}>
               <tr className="border-t border-slate-200 bg-slate-50">
                 <th colSpan={5} scope="rowgroup" className="px-4 py-4 font-medium text-slate-600">
                   <span className="font-bold text-slate-900">세션 {index + 1}</span>
-                  {' · '}{formatSeoulTime(session.startedAt)} – {session.endedAt ? formatSeoulTime(session.endedAt) : '진행 중'}
-                  {' · '}{session.status === 'ACTIVE' ? '진행 중' : '종료'}
-                  {session.endReason ? ` · ${reasonText(session.endReason)}` : ''}
+                  {' · '}{formatSeoulTime(session.startedAt)} – {session.endedAt ? formatSeoulTime(session.endedAt) : '종료 전'}
+                  {' · '}{session.status === 'ACTIVE' ? (waiting ? '연결 확인 중' : '진행 중') : '종료'}
+                  {session.endReason ? ` · ${session.endReason === 'HEARTBEAT_TIMEOUT' ? '연결 끊김으로 자동 종료' : reasonText(session.endReason)}` : ''}
                 </th>
               </tr>
               {intervals.map((interval) => (
@@ -40,7 +41,8 @@ export function SessionHistory({ report }: { report: StudyDayReport }) {
                   <td className="px-4 py-3 tabular-nums">{formatSeoulTime(interval.startedAt)}</td>
                   <td className="px-4 py-3 tabular-nums">
                     {formatSeoulTime(activityEndMs(interval, report.computedAt))}
-                    {interval.open ? (awaitingActivityConfirmation(interval, report.computedAt) ? ' (마지막 확인)' : ' (진행 중)') : ''}
+                    {session.status === 'ACTIVE' && interval.open
+                      ? (awaitingActivityConfirmation(interval, report.computedAt) ? ' (연결 확인 중)' : ' (진행 중)') : ''}
                   </td>
                   <td className="px-4 py-3"><StateBadge state={interval.state} /></td>
                   <td className="px-4 py-3 tabular-nums">{formatDuration(interval.durationSeconds)}</td>

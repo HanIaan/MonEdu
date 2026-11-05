@@ -14,6 +14,7 @@ import static org.springframework.http.HttpStatus.*;
 
 @Service
 public class SessionService {
+    private static final Duration IDLE_SESSION_TIMEOUT=Duration.ofMinutes(5);
     private final Store store; private final AuthService auth; private final Clock clock;
     private final AppConfig.Monitoring config; private final ObjectMapper json;
     private final ApplicationEventPublisher publisher;
@@ -139,7 +140,14 @@ public class SessionService {
     @Transactional
     public void timeout(UUID id) {
         StudySession s=store.session(id,true);
-        if(s!=null && s.status==Status.ACTIVE) timeoutIfNeeded(s,now());
+        if(s==null || s.status!=Status.ACTIVE) return;
+        Instant now=now();
+        Instant last=s.lastHeartbeatAt==null?s.startedAt:s.lastHeartbeatAt;
+        timeoutIfNeeded(s,now);
+        if(last.isBefore(now.minus(IDLE_SESSION_TIMEOUT))) {
+            Instant confirmed=measurable(s.currentState)?s.verifiedUntil:max(s.verifiedUntil,last);
+            finish(s,max(store.open(s.id).startedAt,confirmed),Reason.HEARTBEAT_TIMEOUT,now);
+        }
     }
     private void timeoutIfNeeded(StudySession s,Instant now) {
         Instant last=s.lastHeartbeatAt==null?s.startedAt:s.lastHeartbeatAt;

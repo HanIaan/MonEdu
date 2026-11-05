@@ -130,6 +130,12 @@ Measured effect of v1.3: `frontend/bench/vision/RESULTS.md` §E. Adaptive cadenc
   `lastHeartbeatAt` (or `startedAt` if none) older than `heartbeatTimeoutSec` (90 s) and current state
   not in {UNKNOWN, BREAK} → close current interval at `verifiedUntil` and open `UNKNOWN`
   (`HEARTBEAT_TIMEOUT`) at `verifiedUntil`. Unverified time is therefore never counted as focus.
+- **Abandoned session expiry:** independently of the 90 s measurement timeout, any ACTIVE session
+  (including UNKNOWN and BREAK) with no heartbeat for more than 5 minutes is ended by the scheduler.
+  `endReason = HEARTBEAT_TIMEOUT`; its final interval is closed and `SESSION_ENDED` is published.
+  Measurement states close at `verifiedUntil`; BREAK/UNKNOWN close at the later of `verifiedUntil`
+  and the last heartbeat, bounded below by the open interval start. The silent grace period is not
+  invented as study or break time. A brief interruption below 5 minutes can still reconnect.
 - **Late events after reconnect:** queued client events are applied with the same `effectiveAt` rule,
   so they cannot rewrite history before the current interval (offline time stays UNKNOWN).
 - **Timeout recovery (contract v1.2, W2 CCR approved by C0):** if the current interval is `UNKNOWN`
@@ -156,6 +162,9 @@ Measured effect of v1.3: `frontend/bench/vision/RESULTS.md` §E. Adaptive cadenc
 - Durations of closed intervals: `endedAt - startedAt`. For the open interval, measure to
   `liveEnd = (serverNow - verifiedUntil <= 45 s) ? serverNow : verifiedUntil` so a stale client
   stops accruing immediately and the number matches what the timeout will finalize.
+  For BREAK/UNKNOWN only, use `max(verifiedUntil, lastHeartbeatAt)` as the confirmation reference:
+  these states do not require a running camera. Live heartbeats keep an intentional break current;
+  a closed window stops extending it. Display clocks must stop extrapolating from stale reports.
 - `totals.*Seconds` = sum of durations per state (integer seconds, floor at the end).
 - Focus **streak** = maximal run of time-adjacent `FOCUS_ESTIMATED` intervals (end == next start).
   `longestStreakSeconds` = max streak of the day; `currentStreakSeconds` = the streak containing the

@@ -50,7 +50,7 @@ public class Store {
             .setParameter("ids",students).getResultList();
     }
     public List<UUID> expired(Instant cutoff) {
-        return em.createQuery("select id from StudySession where status='ACTIVE' and currentState not in ('UNKNOWN','BREAK') and coalesce(lastHeartbeatAt,startedAt)<:cutoff",UUID.class).setParameter("cutoff",cutoff).getResultList();
+        return em.createQuery("select id from StudySession where status='ACTIVE' and coalesce(lastHeartbeatAt,startedAt)<:cutoff",UUID.class).setParameter("cutoff",cutoff).getResultList();
     }
     public ActivityInterval open(UUID session) {
         return em.createQuery("from ActivityInterval where sessionId=:id and endedAt is null",ActivityInterval.class).setParameter("id",session).getSingleResult();

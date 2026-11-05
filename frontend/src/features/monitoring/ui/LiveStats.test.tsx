@@ -74,8 +74,8 @@ describe('deriveLiveValues', () => {
     const report = makeReport();
     const fetchedAt = 1_000_000;
     const values = deriveLiveValues(report, fetchedAt, fetchedAt + 45_000);
-    expect(values.focusSeconds).toBe(report.totals.focusSeconds + 45);
-    expect(values.currentStreakSeconds).toBe(report.currentStreakSeconds + 45);
+    expect(values.focusSeconds).toBe(report.totals.focusSeconds + 10);
+    expect(values.currentStreakSeconds).toBe(report.currentStreakSeconds + 10);
     // longest streak can never be shorter than the live current streak
     expect(values.longestStreakSeconds).toBeGreaterThanOrEqual(values.currentStreakSeconds);
   });
@@ -86,5 +86,14 @@ describe('deriveLiveValues', () => {
     expect(values.focusSeconds).toBe(report.totals.focusSeconds);
     expect(values.hasActiveSession).toBe(false);
     expect(values.currentState).toBe('UNKNOWN');
+  });
+
+  it('does not grow cached focus time over an hour or beyond a server-confirmed cap', () => {
+    const report = makeReport();
+    expect(deriveLiveValues(report, 1000, 3_601_000).focusSeconds).toBe(report.totals.focusSeconds + 10);
+    report.intervals[2] = { ...report.intervals[2]!, durationSeconds: 60 };
+    expect(deriveLiveValues(report, 1000, 3_601_000).focusSeconds).toBe(report.totals.focusSeconds);
+    report.activeSessionId = null;
+    expect(deriveLiveValues(report, 1000, 3_601_000).focusSeconds).toBe(report.totals.focusSeconds);
   });
 });

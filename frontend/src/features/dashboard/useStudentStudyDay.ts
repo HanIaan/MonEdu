@@ -7,7 +7,7 @@ import { useCoalescedStreamRefresh } from './useCoalescedStreamRefresh';
 export function useStudentStudyDay(studentId: string, date: string): AsyncData<StudyDayReport> {
   const { refresh, ...rest } = useAsyncData<StudyDayReport>(
     (signal) => api.getStudentStudyDay(studentId, date, { signal }),
-    { key: `teacher:${studentId}:${date}`, refreshMs: 30_000 },
+    { key: `teacher:${studentId}:${date}`, refreshMs: 5_000 },
   );
 
   useCoalescedStreamRefresh('/api/v1/teacher/stream', refresh);

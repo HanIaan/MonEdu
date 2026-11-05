@@ -243,8 +243,11 @@ export function useNowMs(intervalMs = 1000, enabled = true): number {
  * stalled tab does not inflate durations and a resumed tab catches up correctly.
  */
 export function deriveLiveValues(report: StudyDayReport, fetchedAt: number | null, now: number): LiveValues {
-  const open = report.intervals.find((interval) => interval.open) ?? null;
-  const elapsed = open && fetchedAt !== null ? Math.max(0, Math.floor((now - fetchedAt) / 1000)) : 0;
+  const open = report.activeSessionId ? report.intervals.find((interval) => interval.open) ?? null : null;
+  const stale = open ? Date.parse(report.computedAt) - Date.parse(open.startedAt) - open.durationSeconds * 1000 >= 1000 : false;
+  // Never tick indefinitely from a cached report or from an interval already capped by the server.
+  const elapsed = open && !stale && fetchedAt !== null
+    ? Math.min(10, Math.max(0, Math.floor((now - fetchedAt) / 1000))) : 0;
   const add = (state: ActivityState, base: number) => base + (open?.state === state ? elapsed : 0);
 
   const currentStreakSeconds =

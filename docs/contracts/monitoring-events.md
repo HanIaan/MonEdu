@@ -52,8 +52,9 @@ Nothing in these fields leaves the browser.
 5. If a heartbeat response has `timedOut: true` and the engine state is not UNKNOWN, enqueue a
    transition `{state: <engine state>, reason: RECONNECTED, detectedAt: now}`.
 6. Never send per-frame data. Expected volume: a few transitions per minute at most + 2 heartbeats/min.
-7. On `pagehide`, attempt `end` only if the student explicitly ended; otherwise let the heartbeat
-   timeout mark UNKNOWN (closing a tab is not "ended study").
+7. On `pagehide`, attempt `end` only if the student explicitly ended. Otherwise the heartbeat
+   timeout marks UNKNOWN for measurable states, and five minutes with no heartbeat ends an abandoned
+   session in any state (including BREAK/UNKNOWN). A reconnect after expiry must start a new session.
 
 ## 3. Server obligations
 
@@ -66,7 +67,7 @@ Nothing in these fields leaves the browser.
 | Clock | `serverReceivedAt` recorded. `detectedAt > now + 5 s` → 400 `CLOCK_SKEW`. `detectedAt` before session start is clamped (see state-machine §4). Leaving a `HEARTBEAT_TIMEOUT` UNKNOWN interval always takes effect at `serverNow` (state-machine §4, timeout recovery). |
 | Atomicity | Lock the session row (`SELECT … FOR UPDATE`), then event insert + interval close/open + session update in one transaction. Concurrent duplicate posts must yield exactly one stored event. |
 | Fan-out | After commit, publish `StreamEvent` to the student's own stream and to streams of every assigned teacher. |
-| Timeout | See state-machine §4. Publishes `STATE_CHANGED` with reason `HEARTBEAT_TIMEOUT`. |
+| Timeout | See state-machine §4. After 90 s, measurable states become UNKNOWN; after 5 min without heartbeat, all states end with `HEARTBEAT_TIMEOUT` and publish `SESSION_ENDED`. |
 
 ## 4. Server-originated events
 

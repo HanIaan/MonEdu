@@ -231,6 +231,42 @@ class BackendIntegrationTests {
         change(s,2,State.BREAK,Reason.BREAK_STARTED); clock.advance(100); scheduler.scan();
         assertThat(sessions.get(STUDENT,s.id()).currentState()).isEqualTo(State.BREAK);
     }
+    @Test void disconnectedSessionEndsAfterFiveMinutesWithoutInventingFocus() {
+        Session s=start(); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED);
+        clock.advance(30); heartbeat(s,true); Instant confirmed=clock.instant();
+        clock.advance(300); scheduler.scan();
+        assertThat(sessions.get(STUDENT,s.id()).status()).isEqualTo(Status.ACTIVE);
+        clock.advance(1); scheduler.scan();
+        Session ended=sessions.get(STUDENT,s.id());
+        assertThat(ended.status()).isEqualTo(Status.ENDED);
+        assertThat(ended.endedAt()).isEqualTo(confirmed);
+        assertThat(ended.endReason()).isEqualTo(Reason.HEARTBEAT_TIMEOUT);
+        Report report=reports.mine(STUDENT,DATE);
+        assertThat(report.activeSessionId()).isNull();
+        assertThat(report.totals().focusSeconds()).isEqualTo(30);
+        assertThat(report.intervals()).allMatch(i -> !i.open());
+        scheduler.scan();
+        assertThat(sessions.get(STUDENT,s.id()).endedAt()).isEqualTo(confirmed);
+    }
+    @Test void liveBreakAccruesWithoutCameraAndEndsAtLastHeartbeatWhenWindowCloses() {
+        Session s=start(); change(s,1,State.BREAK,Reason.BREAK_STARTED);
+        for(int i=0;i<20;i++) { clock.advance(30); heartbeat(s,false); scheduler.scan(); }
+        assertThat(reports.mine(STUDENT,DATE).totals().breakSeconds()).isEqualTo(600);
+        assertThat(sessions.get(STUDENT,s.id()).status()).isEqualTo(Status.ACTIVE);
+        Instant last=clock.instant();
+        clock.advance(301); scheduler.scan();
+        assertThat(sessions.get(STUDENT,s.id()).status()).isEqualTo(Status.ENDED);
+        assertThat(sessions.get(STUDENT,s.id()).endedAt()).isEqualTo(last);
+        assertThat(reports.mine(STUDENT,DATE).totals().breakSeconds()).isEqualTo(600);
+        assertThat(reports.mine(STUDENT,DATE).intervals()).allMatch(i -> !i.open());
+    }
+    @Test void abandonedUnknownSessionAlsoEndsAndCanBeRestarted() {
+        Session s=start(); clock.advance(301); scheduler.scan();
+        assertThat(sessions.get(STUDENT,s.id()).status()).isEqualTo(Status.ENDED);
+        Session next=start();
+        assertThat(next.status()).isEqualTo(Status.ACTIVE);
+        assertThat(reports.mine(STUDENT,DATE).sessions()).hasSize(2);
+    }
     @Test void cameraOffForcesUnknownCameraStoppedAndReplacementStillWorks() {
         Session s=start(); change(s,1,State.FOCUS_ESTIMATED,Reason.SEATED_CONFIRMED); clock.advance(20);
         assertThat(heartbeat(s,false).currentState()).isEqualTo(State.UNKNOWN);
