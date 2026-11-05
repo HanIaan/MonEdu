@@ -107,6 +107,33 @@ export async function apiFetch<T>(
 }
 
 async function rawFetch<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body: unknown, opts: RequestOptions): Promise<T> {
+  if (opts.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  let onAbort: () => void;
+  const deadline = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      reject(new DOMException('Request aborted', 'AbortError'));
+      controller.abort();
+    };
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      reject(new ApiError(0, 'NETWORK_ERROR', '서버 응답 시간이 초과되었습니다. 연결 후 다시 시도합니다.'));
+      controller.abort();
+    }, 15_000);
+  });
+  try {
+    return await Promise.race([
+      rawFetchRequest<T>(method, path, body, { ...opts, signal: controller.signal }),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer!);
+    opts.signal?.removeEventListener('abort', onAbort!);
+  }
+}
+
+async function rawFetchRequest<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body: unknown, opts: RequestOptions): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const token = opts.anonymous ? null : getToken();

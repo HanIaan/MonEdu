@@ -16,6 +16,8 @@ export interface AsyncDataOptions {
   key: string;
   /** Poll interval in ms. 0 disables polling. */
   refreshMs?: number;
+  /** Bound stalled requests so they cannot block every later refresh. */
+  timeoutMs?: number;
 }
 
 function asApiError(err: unknown): ApiError {
@@ -33,10 +35,12 @@ function asApiError(err: unknown): ApiError {
  */
 export function useAsyncData<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
-  { key, refreshMs = 0 }: AsyncDataOptions,
+  { key, refreshMs = 0, timeoutMs = 15_000 }: AsyncDataOptions,
 ): AsyncData<T> {
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  const timeoutRef = useRef(timeoutMs);
+  timeoutRef.current = timeoutMs;
 
   const [state, setState] = useState<{
     data: T | null;
@@ -64,15 +68,30 @@ export function useAsyncData<T>(
     const controller = new AbortController();
     activeRef.current = { controller, id };
 
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let onAbort: () => void;
+    const deadline = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new DOMException('Request aborted', 'AbortError'));
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(new ApiError(0, 'NETWORK_ERROR', '서버 응답이 지연되고 있습니다. 다시 연결을 시도합니다.'));
+        controller.abort();
+      }, timeoutRef.current);
+    });
+
     void (async () => {
       try {
-        const result = await fetcherRef.current(controller.signal);
-        if (!mountedRef.current || controller.signal.aborted) return;
+        const result = await Promise.race([fetcherRef.current(controller.signal), deadline]);
+        if (!mountedRef.current || controller.signal.aborted || activeRef.current?.id !== id) return;
         setState({ data: result, error: null, loading: false, fetchedAt: Date.now() });
       } catch (err) {
-        if (!mountedRef.current || controller.signal.aborted) return;
+        if (!mountedRef.current || activeRef.current?.id !== id || (controller.signal.aborted && !timedOut)) return;
         setState((prev) => ({ ...prev, error: asApiError(err), loading: false }));
       } finally {
+        clearTimeout(timer!);
+        controller.signal.removeEventListener('abort', onAbort!);
         // Ignore completion of a superseded (aborted / key-changed) request.
         const wasActive = activeRef.current?.id === id;
         if (wasActive) activeRef.current = null;
@@ -111,6 +130,21 @@ export function useAsyncData<T>(
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const onFocus = () => refresh();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refresh]);
 
   return { ...state, refresh };
 }

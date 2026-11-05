@@ -31,6 +31,60 @@ function makeFetcher() {
 }
 
 describe('useAsyncData concurrency', () => {
+  it('releases a hung request at the deadline and applies a queued fresh report', async () => {
+    vi.useFakeTimers();
+    try {
+      let firstSignal: AbortSignal | undefined;
+      let finishOld: (value: string) => void = () => {};
+      const fetcher = vi.fn((signal: AbortSignal) => {
+        if (fetcher.mock.calls.length === 1) {
+          firstSignal = signal;
+          return new Promise<string>((resolve) => { finishOld = resolve; });
+        }
+        return Promise.resolve('fresh report');
+      });
+      const { result, unmount } = renderHook(() => useAsyncData(fetcher, { key: 'teacher', timeoutMs: 1000 }));
+      act(() => result.current.refresh());
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(firstSignal?.aborted).toBe(true);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(result.current.data).toBe('fresh report');
+      await act(async () => { finishOld('stale report'); });
+      expect(result.current.data).toBe('fresh report');
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exposes a request timeout without remaining in loading forever', async () => {
+    vi.useFakeTimers();
+    try {
+      const { result, unmount } = renderHook(() => useAsyncData(() => new Promise<string>(() => {}), { key: 'stalled', timeoutMs: 1000 }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(result.current.loading).toBe(false);
+      expect(result.current.error?.code).toBe('NETWORK_ERROR');
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refreshes immediately when returning to the page or reconnecting', async () => {
+    const fetcher = vi.fn(async () => 'fresh');
+    const { unmount } = renderHook(() => useAsyncData(fetcher, { key: 'resume' }));
+    await act(async () => {});
+    for (const event of ['focus', 'online']) {
+      await act(async () => { window.dispatchEvent(new Event(event)); });
+    }
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    unmount();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
   it('coalesces refreshes during an in-flight request into one trailing reload', async () => {
     const { fetcher, pending, maxInFlight } = makeFetcher();
     const { result } = renderHook(() => useAsyncData<string>(fetcher, { key: 'me', refreshMs: 0 }));

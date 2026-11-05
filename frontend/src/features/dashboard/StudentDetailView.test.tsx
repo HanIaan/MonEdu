@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ApiError } from '@/lib/api';
 import { makeReport } from './testFixtures';
 import { StudentDetailView } from './StudentDetailView';
@@ -39,5 +39,37 @@ describe('StudentDetailView', () => {
     expect(screen.getByTestId('timeline')).toBeInTheDocument();
     expect(screen.getAllByTestId('timeline-segment')).toHaveLength(3);
     expect(screen.getByTestId('date-picker')).toHaveValue('2026-11-03');
+  });
+
+  it('shows the same activity intervals in the timeline and grouped session history', () => {
+    const report = makeReport();
+    report.intervals[1] = { ...report.intervals[1]!, state: 'BREAK', reason: 'BREAK_STARTED' };
+    render(<StudentDetailView {...baseProps} report={report} />);
+    const timeline = screen.getAllByTestId('timeline-segment');
+    const history = screen.getAllByTestId('session-activity');
+    expect(history).toHaveLength(timeline.length);
+    for (const [index, interval] of report.intervals.entries()) {
+      expect(history[index]).toHaveAttribute('data-interval-id', interval.id);
+      expect(history[index]!.querySelector('[data-state]')).toHaveAttribute('data-state', timeline[index]!.getAttribute('data-state'));
+    }
+    expect(within(history[1]!).getByText('5분 0초')).toBeInTheDocument();
+    expect(within(history[1]!).getByText('휴식 시작')).toBeInTheDocument();
+    expect(screen.getByTestId('session-history')).toHaveTextContent('세션 1');
+    expect(screen.getByText('마지막 갱신 10:00:00')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '기록 새로고침' }));
+    expect(baseProps.onRetry).toHaveBeenCalled();
+  });
+
+  it('keeps activities under their own session and updates session end information', () => {
+    const report = makeReport();
+    report.sessions.push({ id: 'session-2', status: 'ENDED', startedAt: '2026-11-03T02:00:00Z', endedAt: '2026-11-03T02:05:00Z', endReason: 'SESSION_ENDED' });
+    report.intervals.push({ ...report.intervals[0]!, id: 'later', sessionId: 'session-2', state: 'UNKNOWN', startedAt: '2026-11-03T02:00:00Z', endedAt: '2026-11-03T02:05:00Z', durationSeconds: 300 });
+    render(<StudentDetailView {...baseProps} report={report} />);
+    const history = screen.getByTestId('session-history');
+    const first = history.querySelector('[data-session-id="session-1"]') as HTMLElement;
+    const second = history.querySelector('[data-session-id="session-2"]') as HTMLElement;
+    expect(within(first).getAllByTestId('session-activity')).toHaveLength(3);
+    expect(within(second).getAllByTestId('session-activity')).toHaveLength(1);
+    expect(second).toHaveTextContent('11:00:00 – 11:05:00 · 종료 · 학습 종료');
   });
 });

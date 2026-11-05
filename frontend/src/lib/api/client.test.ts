@@ -7,10 +7,34 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   setToken(null);
 });
 
 describe('apiFetch with refresh cookie (contract v1.3)', () => {
+  it('aborts a stuck transition request and exposes a retryable network error', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | null | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      signal = init?.signal;
+      return new Promise<Response>(() => {});
+    });
+    const error = api.postTransition('s', {} as never).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(signal?.aborted).toBe(true);
+    const result = await error as ApiError;
+    expect(result.code).toBe('NETWORK_ERROR');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('honours caller cancellation without reporting a network failure', async () => {
+    const controller = new AbortController();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>(() => {}));
+    const error = api.getMe({ signal: controller.signal }).catch((err: unknown) => err);
+    controller.abort();
+    expect(await error).toMatchObject({ name: 'AbortError' });
+  });
+
   it('on 401 refreshes once from the cookie and retries with the new token', async () => {
     setToken('old');
     const calls: { url: string; auth: string | null; credentials?: RequestCredentials }[] = [];

@@ -1,4 +1,4 @@
-import { ApiError } from '@/lib/api/client';
+import { api as httpApi, ApiError } from '@/lib/api/client';
 import type { HeartbeatResponse, StudySession, TransitionRequest, TransitionResponse } from '@/lib/api/types';
 import { SessionSync, type ClientContext, type SyncApi, type SyncStorage } from './sync';
 
@@ -272,4 +272,31 @@ describe('SessionSync', () => {
     await vi.advanceTimersByTimeAsync(0);
     await expect(p).resolves.toBe(true);
   });
+});
+
+it('delivers a queued break after a stalled HTTP request times out, preserving event identity', async () => {
+  const bodies: TransitionRequest[] = [];
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const req = JSON.parse(String(init?.body)) as TransitionRequest;
+    bodies.push(req);
+    if (bodies.length === 1) return new Promise<Response>(() => {});
+    return new Response(JSON.stringify(okResponse(req)), { status: 200 });
+  });
+  const { sync } = setup({ postTransition: httpApi.postTransition });
+  try {
+    sync.begin(session());
+    sync.enqueue(tr('FOCUS_ESTIMATED', 'SEATED_CONFIRMED'));
+    sync.enqueue(tr('BREAK', 'BREAK_STARTED'));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(sync.getStatus().pendingEvents).toBe(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(bodies).toHaveLength(3);
+    expect(bodies[1]!.eventId).toBe(bodies[0]!.eventId);
+    expect(bodies[2]!.state).toBe('BREAK');
+    expect(sync.getStatus().pendingEvents).toBe(0);
+    expect(sync.sessionState?.currentState).toBe('BREAK');
+  } finally {
+    sync.stop();
+    fetch.mockRestore();
+  }
 });

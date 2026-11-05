@@ -6,7 +6,8 @@ import { AccessDenied } from '@/components/AccessDenied';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { StatCard } from '@/components/StatCard';
 import { EmptyState, LoadingState } from '@/components/Skeleton';
-import { Timeline, lateStatusText, reasonText } from '@/components/Timeline';
+import { Timeline, lateStatusText } from '@/components/Timeline';
+import { SessionHistory } from './SessionHistory';
 
 export interface StudentDetailViewProps {
   studentId: string;
@@ -16,14 +17,6 @@ export interface StudentDetailViewProps {
   error: ApiError | null;
   onRetry: () => void;
   onDateChange: (date: string) => void;
-}
-
-function SessionStatusText({ status }: { status: 'ACTIVE' | 'ENDED' }) {
-  return status === 'ACTIVE' ? (
-    <span className="font-semibold text-emerald-700">진행 중</span>
-  ) : (
-    <span className="text-slate-600">종료</span>
-  );
 }
 
 /** Teacher detail view: date-scoped summary, day timeline and session list. */
@@ -137,6 +130,13 @@ export const StudentDetailView = memo(function StudentDetailView({
             />
           </dl>
 
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span>마지막 갱신 {formatSeoulTime(report.computedAt)}</span>
+            <button type="button" onClick={onRetry} className="rounded-full px-3 py-2 font-semibold text-slate-700 hover:bg-slate-100">
+              기록 새로고침
+            </button>
+          </div>
+
           <section aria-labelledby="detail-timeline-title">
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
               <h3 id="detail-timeline-title" className="text-lg font-bold text-slate-900">
@@ -160,43 +160,7 @@ export const StudentDetailView = memo(function StudentDetailView({
                 />
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <caption className="sr-only">세션 기록</caption>
-                  <thead>
-                    <tr className="text-xs font-semibold text-slate-500">
-                      <th scope="col" className="px-4 pb-3">
-                        시작
-                      </th>
-                      <th scope="col" className="px-4 pb-3">
-                        종료
-                      </th>
-                      <th scope="col" className="px-4 pb-3">
-                        상태
-                      </th>
-                      <th scope="col" className="px-4 pb-3">
-                        종료 사유
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.sessions.map((session) => (
-                      <tr key={session.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-4 py-4 font-semibold tabular-nums text-slate-900">
-                          {formatSeoulTime(session.startedAt)}
-                        </td>
-                        <td className="px-4 py-4 font-semibold tabular-nums text-slate-900">
-                          {session.endedAt ? formatSeoulTime(session.endedAt) : '—'}
-                        </td>
-                        <td className="px-4 py-4">
-                          <SessionStatusText status={session.status} />
-                        </td>
-                        <td className="px-4 py-4 text-slate-600">{reasonText(session.endReason)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SessionHistory report={report} />
             )}
           </section>
 

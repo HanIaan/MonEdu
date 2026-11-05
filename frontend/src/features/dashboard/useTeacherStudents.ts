@@ -1,5 +1,4 @@
 'use client';
-import { useEffect } from 'react';
 import { api, type TeacherStudentOverview } from '@/lib/api';
 import { useAsyncData, type AsyncData } from './useAsyncData';
 import { useCoalescedStreamRefresh } from './useCoalescedStreamRefresh';
@@ -18,12 +17,6 @@ export function useTeacherStudents(): AsyncData<TeacherStudentOverview[]> {
   );
 
   useCoalescedStreamRefresh('/api/v1/teacher/stream', refresh);
-
-  useEffect(() => {
-    const onFocus = () => refresh();
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [refresh]);
 
   return { ...rest, refresh };
 }
