@@ -1,6 +1,7 @@
 import { api as httpApi, ApiError } from '@/lib/api/client';
 import type { HeartbeatResponse, StudySession, TransitionRequest, TransitionResponse } from '@/lib/api/types';
 import { SessionSync, type ClientContext, type SyncApi, type SyncStorage } from './sync';
+import { nowMs } from '@/lib/time';
 
 const T0 = Date.parse('2026-11-03T00:00:00Z');
 
@@ -55,7 +56,7 @@ function hb(over: Partial<HeartbeatResponse> = {}): HeartbeatResponse {
   };
 }
 
-function setup(api: Partial<SyncApi> = {}, ctx: Partial<ClientContext> = {}) {
+function setup(api: Partial<SyncApi> = {}, ctx: Partial<ClientContext> = {}, now = () => Date.now()) {
   let n = 0;
   const storage = memStorage();
   const sent: TransitionRequest[] = [];
@@ -74,7 +75,7 @@ function setup(api: Partial<SyncApi> = {}, ctx: Partial<ClientContext> = {}) {
   const fatal = vi.fn();
   const sync = new SessionSync({
     api: fullApi,
-    now: () => Date.now(),
+    now,
     uuid: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     storage,
     context: () => ({ engineState: 'FOCUS_ESTIMATED', cameraActive: true, pageVisible: true, ...ctx }),
@@ -100,6 +101,22 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('SessionSync', () => {
+  it('sends current event and heartbeat timestamps after performance time pauses during sleep', async () => {
+    vi.stubGlobal('performance', { timeOrigin: T0, now: () => 1000 });
+    const { sync, sent, heartbeats } = setup({}, {}, nowMs);
+    try {
+      sync.begin(session());
+      const wokeAt = T0 + 3_348_000;
+      vi.setSystemTime(wokeAt);
+      sync.enqueue(tr('BREAK', 'BREAK_STARTED', nowMs()));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sent[0]!.detectedAt).toBe(new Date(wokeAt).toISOString());
+      expect(heartbeats[0]).toMatchObject({ sentAt: new Date(wokeAt).toISOString() });
+    } finally {
+      sync.stop();
+      vi.unstubAllGlobals();
+    }
+  });
   it('assigns uuid + strictly increasing seq and sends in order', async () => {
     const { sync, sent } = setup();
     sync.begin(session());

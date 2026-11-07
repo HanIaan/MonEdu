@@ -1,4 +1,37 @@
-import { formatDuration, formatSeoulTime, seoulDate } from './time';
+import { formatDuration, formatSeoulTime, nowMs, seoulDate } from './time';
+
+describe('event wall clock after system sleep', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([2245, 3348, 7076])('includes a %s-second sleep even if performance time did not advance', (seconds) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const origin = Date.parse('2026-11-07T00:00:00Z');
+    vi.setSystemTime(origin);
+    let elapsed = 1000;
+    vi.stubGlobal('performance', { timeOrigin: origin, now: () => elapsed });
+    vi.setSystemTime(origin + elapsed);
+    expect(nowMs()).toBe(Date.now());
+    vi.setSystemTime(origin + elapsed + seconds * 1000);
+    expect(nowMs()).toBe(Date.now());
+    expect(new Date(nowMs()).toISOString()).toBe(new Date(Date.now()).toISOString());
+    elapsed += 1000;
+    vi.setSystemTime(Date.now() + 1000);
+    expect(nowMs()).toBe(Date.now());
+  });
+
+  it('continues to follow the wall clock over repeated sleeps in the same page', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const origin = Date.parse('2026-11-07T00:00:00Z');
+    vi.stubGlobal('performance', { timeOrigin: origin, now: () => 1000 });
+    for (const offset of [1000, 2_246_000, 3_349_000, 7_077_000]) {
+      vi.setSystemTime(origin + offset);
+      expect(nowMs()).toBe(origin + offset);
+    }
+  });
+});
 
 describe('time helpers', () => {
   it('maps UTC instants to Asia/Seoul dates', () => {

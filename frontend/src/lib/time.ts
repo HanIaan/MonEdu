@@ -35,9 +35,11 @@ export function formatDuration(totalSeconds: number | null | undefined, compact 
   return parts.join(' ');
 }
 
-/** Wall-clock epoch ms derived from the monotonic clock (immune to tick counting). */
+/**
+ * UTC epoch time for observations and API events. Use the actual wall clock: on some platforms
+ * performance.now() pauses during system sleep, so timeOrigin + now() can fall minutes behind.
+ * performance.now() remains suitable for measuring the execution cost of a model invocation.
+ */
 export function nowMs(): number {
-  return typeof performance !== 'undefined' && performance.timeOrigin
-    ? performance.timeOrigin + performance.now()
-    : Date.now();
+  return Date.now();
 }

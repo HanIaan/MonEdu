@@ -257,6 +257,33 @@ describe('MonitoringController', () => {
     ctrl.dispose();
   });
 
+  it('uses the default wall clock after Mac-style sleep and never credits the sleeping gap as focus', async () => {
+    let sleptMs = 0;
+    vi.stubGlobal('performance', { timeOrigin: T0, now: () => Date.now() - T0 - sleptMs });
+    const { ctrl, videoEl, doc, transitions } = setup({ now: undefined });
+    try {
+      await ctrl.start(videoEl);
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(ctrl.getSnapshot().engineState).toBe('FOCUS_ESTIMATED');
+      const lastFrame = ctrl.getSnapshot().lastFrameAt!;
+      sleptMs = 3_348_000;
+      const wokeAt = Date.now() + sleptMs;
+      // The wall clock advances while browser timers and performance time were suspended.
+      vi.setSystemTime(wokeAt);
+      doc.setVisibility('visible');
+      expect(ctrl.getSnapshot().engineState).toBe('UNKNOWN');
+      expect(transitions.at(-1)).toMatchObject({ reason: 'INFERENCE_STALLED', detectedAt: lastFrame });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(ctrl.getSnapshot().engineState).toBe('FOCUS_ESTIMATED');
+      expect(transitions.at(-1)!.detectedAt).toBeGreaterThanOrEqual(wokeAt);
+      ctrl.startBreak();
+      expect(transitions.at(-1)).toMatchObject({ reason: 'BREAK_STARTED', detectedAt: Date.now() });
+    } finally {
+      ctrl.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('pause → MONITORING_PAUSED, camera + pipeline + timers released; resume requires fresh 3 s', async () => {
     const { ctrl, videoEl, track, pipeline, transitions, doc, perm } = setup();
     await ctrl.start(videoEl);

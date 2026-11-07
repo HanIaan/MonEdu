@@ -54,7 +54,11 @@ normal studying). Eye closure is not head pose: a face that cannot be measured i
 ## 3. Transitions (engine)
 
 All durations are measured with **elapsed wall-clock time** (`now - runStartedAt`, from
-`performance.timeOrigin + performance.now()`), never by counting ticks. A *run* is a contiguous
+`Date.now()` for epoch timestamps, including time spent in system sleep), never by counting ticks.
+`performance.timeOrigin + performance.now()` must not be used as the real event clock: on some
+platforms the performance clock pauses during sleep. A frame gap after waking still resets evidence
+and becomes UNKNOWN; using the current time must not credit the sleep gap as focus.
+A *run* is a contiguous
 period of the same evidence. A run is broken only when contrary evidence persists for
 `debounceMs` (hysteresis); single contrary frames do not reset it. Exceptions (v1.3):
 

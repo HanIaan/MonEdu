@@ -100,7 +100,7 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
 
 /** Coarse per-tick result. Never contains pixels, landmarks, boxes or embeddings. */
 export interface FrameObservation {
-  /** Epoch ms (performance.timeOrigin + performance.now()) when the frame was captured. */
+  /** Actual UTC epoch ms (Date.now()) when the frame was captured, including elapsed system sleep. */
   at: number;
   /** 'LOW' when the frame is too dark/uniform/blurred to judge. */
   frameQuality: 'OK' | 'LOW';
